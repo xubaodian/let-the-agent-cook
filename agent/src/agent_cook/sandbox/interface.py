@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import AsyncContextManager, Protocol
+from typing import Any, AsyncContextManager, Protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -8,6 +8,12 @@ class CommandResult:
     exit_code: int
     stdout: str
     stderr: str
+    timed_out: bool = False
+    truncated: bool = False
+
+
+class SandboxError(RuntimeError):
+    """The backend or a workspace operation could not complete."""
 
 
 class Sandbox(Protocol):
@@ -20,6 +26,10 @@ class Sandbox(Protocol):
     async def put_file(self, path: str, content: bytes) -> None: ...
 
     async def get_file(self, path: str) -> bytes: ...
+
+    async def request(
+        self, operation: str, arguments: dict[str, Any], *, timeout_seconds: float = 15
+    ) -> dict[str, Any]: ...
 
 
 class SandboxFactory(Protocol):

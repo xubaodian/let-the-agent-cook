@@ -35,4 +35,8 @@ class ToolContext:
     get_sandbox: Callable[[], Awaitable[Sandbox]]
 
 
+class ToolError(RuntimeError):
+    """An expected tool error the model can act on."""
+
+
 ToolHandler = Callable[[dict[str, object], ToolContext], Awaitable[ToolResult]]
