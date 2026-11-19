@@ -153,6 +153,7 @@ async def register_mcp_tools(
             else:
                 http = await stack.enter_async_context(AsyncClient(
                     headers=config.get("headers"), timeout=_TIMEOUT_SECONDS, follow_redirects=False,
+                    trust_env=urlsplit(config["url"]).hostname not in {"localhost", "127.0.0.1", "::1"},
                 ))
                 streams = await stack.enter_async_context(streamable_http_client(config["url"], http_client=http))
             session = await stack.enter_async_context(ClientSession(

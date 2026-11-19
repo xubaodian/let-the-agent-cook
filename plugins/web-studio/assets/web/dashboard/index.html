@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tinjauan kinerja mingguan</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #192e2a; background: #edf4ef; }
+    body { margin: 0; }
+    main { width: min(100% - 3rem, 52rem); margin: clamp(2rem, 8vh, 5rem) auto; }
+    h1 { font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.1; }
+    section { padding: 1.5rem; background: #fff; border: 1px solid #c9d9d0; border-radius: 0.75rem; }
+    #filters { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    button { font: inherit; padding: 0.5rem 0.75rem; border: 1px solid #245c49; border-radius: 0.35rem; cursor: pointer; }
+    button[aria-pressed="true"] { color: #fff; background: #245c49; }
+    #amount { font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; margin-bottom: 0; }
+    p { line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tinjauan kinerja mingguan</h1>
+    <p id="period"></p>
+    <section aria-label="GMV menurut kategori">
+      <div id="filters" aria-label="Kategori toko"></div>
+      <p id="amount" role="status">Memuat…</p>
+      <p id="coverage"></p>
+    </section>
+    <p id="method"></p>
+  </main>
+  <script>
+    const amount = document.querySelector("#amount");
+    const formatter = new Intl.NumberFormat("id-ID", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    async function readJSON(path) {
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(path);
+      return response.json();
+    }
+
+    async function showReview() {
+      try {
+        const [metrics, reference] = await Promise.all([readJSON("metrics.json"), readJSON("reference.json")]);
+        document.querySelector("#period").textContent =
+          [metrics.market, metrics.start_date + " – " + metrics.end_date].join(" | ");
+        document.querySelector("#method").textContent = reference.excerpt;
+        const filters = document.querySelector("#filters");
+
+        const groups = [{...metrics, category: "all", label: "Semua kategori"}, ...metrics.categories];
+        function update(group) {
+          amount.textContent = group.gmv_cents === null ? "Belum tersedia" : "US$" + formatter.format(group.gmv_cents / 100);
+          document.querySelector("#coverage").textContent =
+            group.valued_orders + " dari " + group.orders + " pesanan memiliki nilai.";
+          for (const button of filters.children) {
+            button.setAttribute("aria-pressed", String(button.dataset.category === group.category));
+          }
+        }
+        for (const group of groups) {
+          const button = document.createElement("button");
+          button.textContent = group.label;
+          button.dataset.category = group.category;
+          button.addEventListener("click", () => update(group));
+          filters.append(button);
+        }
+        update(groups[0]);
+      } catch {
+        amount.textContent = "Data belum tersedia.";
+      }
+    }
+
+    showReview();
+  </script>
+</body>
+</html>

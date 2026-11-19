@@ -102,3 +102,5 @@ Python 脚本在任务沙箱里执行，工作目录是工作区根目录。从 
 ```
 
 把示例 URL 换成实际服务。任务请求中的 `project-data/lookup` 使用 `mcpServers` 下的服务名 `project-data`，以及服务端公布的工具名 `lookup`。`stdio` 由宿主启动选中的本地服务，支持 `command`、`args`、`env` 和插件内的 `cwd`。运行时在首轮模型调用前发现工具，把文本或结构化结果交回 Agent，并在任务退出时关闭连接。
+
+宿主直接连接 `localhost`、`127.0.0.1` 和 `::1` 上的 HTTP MCP 服务。[本地 MCP 示例](../examples/README.md)

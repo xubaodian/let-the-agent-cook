@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "task": "Build the Field Workshop registration site under out/site/. Use the latest English rules and FAQ from reference-library/search, and record their excerpts and sources in event.json with rules, faq, and sources keys. Copy the registration template files from assets/web/registration and adapt them as needed. Use the loopback mock API from serve.py, starting it with Playwright server_argv and cwd out/site. Verify the empty form, the full-session response for capacity@example.test, and the success response for guest@example.test. After capturing the first screenshot, revise the button style and delegate a fresh verification with browser-reviewer. Submit index.html, style.css, event.json, serve.py, and the current preview.png from out/site/.",
+  "plugins": ["../../plugins/web-studio"],
+  "skill_directories": ["../../skills"],
+  "skills": ["research-synthesis", "static-site", "browser-qa", "image-assets"],
+  "mcp_tools": ["reference-library/search"]
+}

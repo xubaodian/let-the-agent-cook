@@ -1,0 +1,11 @@
+date,order_id,market,category,gmv_cents
+2026-10-05,ID-1001,ID,home-living,12000
+2026-10-06,ID-1002,ID,fashion,8000
+2026-10-06,SG-2001,SG,home-living,25000
+2026-10-07,ID-1003,ID,home-living,15000
+2026-10-08,ID-1004,ID,fashion,
+2026-10-09,ID-1005,ID,home-living,9000
+2026-10-06,ID-1002,ID,fashion,8000
+2026-10-11,ID-1006,ID,fashion,11000
+2026-10-11,SG-2002,SG,fashion,4300
+2026-10-12,ID-1007,ID,fashion,28000
