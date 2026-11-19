@@ -1,15 +1,17 @@
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import BinaryIO
 
 import yaml
 
-from agent_cook.sandbox.limits import MAX_SCAN_ENTRIES, MAX_TEXT_FILE_BYTES
-from agent_cook.sandbox.paths import SKILL_URI_PREFIX, workspace_path
-from agent_cook.sandbox.worker.workspace import Workspace, page_entries, read_file
+from agent_cook.sandbox.interface import SandboxError
+from agent_cook.sandbox.limits import (
+    MAX_FILE_BYTES, MAX_SCAN_ENTRIES, MAX_TEXT_FILE_BYTES, MAX_TRANSFER_BYTES,
+)
+from agent_cook.sandbox.worker.workspace import Workspace
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,9 +20,13 @@ class _Skill:
     description: str
     source: Workspace
 
+    @property
+    def entry(self) -> str:
+        return f"{self.name}/SKILL.md"
+
 
 class SkillCatalog:
-    """Expose Skill metadata and the registered packages' read-only files."""
+    """Discover Skill metadata and supply package files to the task workspace."""
 
     def __init__(self, directories: Iterable[Path]) -> None:
         self._skills: dict[str, _Skill] = {}
@@ -51,7 +57,7 @@ class SkillCatalog:
             {
                 "name": skill.name,
                 "description": skill.description,
-                "entry": f"{SKILL_URI_PREFIX}{skill.name}/SKILL.md",
+                "entry": skill.entry,
             }
             for skill in sorted(self._skills.values(), key=lambda skill: skill.name)
         ]
@@ -62,47 +68,42 @@ class SkillCatalog:
         )
         return f"{base}\n\n{catalog}" if base else catalog
 
-    def _resolve(self, uri: str) -> tuple[_Skill, str]:
-        name, _, relative = uri.removeprefix(SKILL_URI_PREFIX).partition("/")
-        skill = self._skills.get(name)
-        if skill is None:
-            raise ValueError("Use the entry of a configured skill, or ls at skill:// to discover skills.")
-        relative = workspace_path(relative or ".", allow_root=True)
-        return skill, name if relative == "." else f"{name}/{relative}"
+    def workspace_files(self, inputs: Mapping[str, bytes]) -> dict[str, bytes]:
+        files = dict(inputs)
+        remaining_bytes = MAX_TRANSFER_BYTES - sum(len(content) for content in files.values())
+        if remaining_bytes < 0:
+            raise SandboxError("Workspace inputs exceed the batch transfer limit.")
+        remaining_entries = MAX_SCAN_ENTRIES
+        occupied = {path.split("/", 1)[0] for path in inputs}
 
-    def read_file(self, path: str, start_line: int = 1, line_count: int = 200) -> dict[str, Any]:
-        skill, relative = self._resolve(path)
-        result = read_file(skill.source, relative, start_line=start_line, line_count=line_count)
-        result["path"] = SKILL_URI_PREFIX + result["path"]
-        return result
-
-    def list_files(
-        self, directory: str, recursive: bool = False, max_results: int = 80,
-        kind: str = "all", cursor: str | None = None,
-    ) -> dict[str, Any]:
-        if directory == SKILL_URI_PREFIX:
-            entries, scan_limited = self._catalog_entries(recursive)
-        else:
-            skill, relative = self._resolve(directory)
-            entries, scan_limited = skill.source.entries(relative, recursive=recursive)
-        return page_entries(
-            [(SKILL_URI_PREFIX + path, entry_kind) for path, entry_kind in entries],
-            scan_limited, max_results=max_results, kind=kind, cursor=cursor,
-        )
-
-    def _catalog_entries(self, recursive: bool) -> tuple[list[tuple[str, str]], bool]:
-        entries = [(name, "directory") for name in sorted(self._skills)]
-        if len(entries) > MAX_SCAN_ENTRIES:
-            return entries[:MAX_SCAN_ENTRIES], True
-        if recursive:
-            for skill in self._skills.values():
-                children, scan_limited = skill.source.entries(
-                    skill.name, recursive=True, scan_limit=MAX_SCAN_ENTRIES - len(entries),
+        for skill in self._skills.values():
+            if skill.name in occupied:
+                raise SandboxError(f"Skill directory '{skill.name}' conflicts with a workspace input.")
+            try:
+                entries, scan_limited = skill.source.entries(
+                    skill.name, recursive=True, scan_limit=remaining_entries,
                 )
-                entries.extend(children)
-                if scan_limited:
-                    return sorted(entries), True
-        return sorted(entries), False
+            except OSError as error:
+                raise SandboxError(f"Could not list files for skill '{skill.name}'.") from error
+            if scan_limited:
+                raise SandboxError("Configured skills exceed the workspace file scan limit.")
+            if (skill.entry, "file") not in entries:
+                raise SandboxError(f"Skill '{skill.name}' is missing its SKILL.md file.")
+            remaining_entries -= len(entries)
+
+            for path, kind in entries:
+                if kind != "file":
+                    continue
+                try:
+                    content = skill.source.read_bytes(path, min(MAX_FILE_BYTES, remaining_bytes))
+                except OSError as error:
+                    raise SandboxError(f"Could not read skill file '{path}'.") from error
+                except ValueError as error:
+                    raise SandboxError(f"Skill file '{path}' exceeds the file or batch transfer limit.") from error
+                files[path] = content
+                remaining_bytes -= len(content)
+
+        return files
 
 
 def _description(stream: BinaryIO, directory_name: str) -> str:

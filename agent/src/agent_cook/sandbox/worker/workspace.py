@@ -144,13 +144,6 @@ def list_files(
     kind: str = "all", cursor: str | None = None,
 ) -> dict[str, Any]:
     entries, scan_limited = workspace.entries(directory, recursive=recursive)
-    return page_entries(entries, scan_limited, max_results=max_results, kind=kind, cursor=cursor)
-
-
-def page_entries(
-    entries: list[tuple[str, str]], scan_limited: bool, *,
-    max_results: int, kind: str, cursor: str | None,
-) -> dict[str, Any]:
     limit = max(1, min(max_results, MAX_FIND_RESULTS))
     matches = [
         (path, entry_kind) for path, entry_kind in entries

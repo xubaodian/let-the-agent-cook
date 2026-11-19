@@ -20,7 +20,7 @@ flowchart TD
 | 工具 | 接口与行为 |
 |---|---|
 | `ls` | 列出文件和子目录。默认查看工作区根目录一层，可递归、按类型过滤和分页。 |
-| `read_file` | 按行读取工作区或已配置 Skill 的 UTF-8 文本，`next_line` 可用于继续阅读。 |
+| `read_file` | 按行读取工作区里的 UTF-8 文本，`next_line` 可用于继续阅读。 |
 | `search_files` | 按 glob 找文件，可选字面文本查询并返回行号。文本搜索会跳过常见依赖目录和二进制文件。 |
 | `write_file` | 原子写入整份 UTF-8 文本，按需创建父目录。`overwrite` 可以控制覆盖。 |
 | `copy_file` | 复制工作区里的单个文件，支持二进制，默认保留已有目标。 |
@@ -37,16 +37,16 @@ flowchart TD
 
 ## 按需读取 Skill
 
-用 `--skills-dir` 挂载本机的 Skill 目录，可重复指定。目录包含一组 Skill 子目录，每项以带 YAML frontmatter 的 `SKILL.md` 为入口，`name` 与目录名一致。
+使用 Docker 或 E2B 沙箱时，可以用 `--skills-dir` 配置本机的 Skill 目录，可重复指定。目录包含一组 Skill 子目录，每项以带 YAML frontmatter 的 `SKILL.md` 为入口，`name` 与目录名一致。
 
 ```bash
-uv run --project agent agent-cook --skills-dir /path/to/skills \
+uv run --project agent agent-cook --sandbox docker --skills-dir /path/to/skills \
   '找到适合这个任务的 Skill，并说明它的步骤。'
 ```
 
-初始模型上下文只包含每项 Skill 的 `name`、`description` 和 `entry`。比如模型可以调用 `read_file` 读取 `skill://example/SKILL.md`，再用 `ls` 查看 `skill://example/references`，按需读取其中的文件。用 `ls` 查看 `skill://` 可列出已挂载的 Skill。
+初始模型上下文只包含每项 Skill 的 `name`、`description` 和 `entry`。工作区首次打开时，将已配置 Skill 的包文件按原目录结构复制到工作区。比如 `example/SKILL.md` 对应沙箱内的 `/workspace/example/SKILL.md`。
 
-`skill://` 是工具层的只读路径，映射到已配置目录中的实际文件。Skill 文件读取复用路径校验、符号链接限制和文本分页。只阅读 Skill 时可以在宿主直接完成。需要处理工作区文件或执行命令时，用 `--sandbox docker` 或 `--sandbox e2b`。
+模型可以用 `read_file` 读取 `example/SKILL.md`，用 `ls` 查看 `example/references`，也可以在 `run_command` 里用解释器运行 `example/scripts` 里的脚本。Skill 包仅传输普通文件，与用户输入共用传输上限。同名的工作区输入会报错，运行期间的修改保存在当前任务的副本里。
 
 ## 生图
 

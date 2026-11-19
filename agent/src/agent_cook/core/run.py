@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from agent_cook.core.loop import run_loop
@@ -19,10 +19,13 @@ async def run_agent(
     model: ModelClient,
     tools: ToolRegistry | None = None,
     sandbox_factory: SandboxFactory | None = None,
-    input_files: Mapping[str, bytes] | None = None,
+    input_files: Mapping[str, bytes] | Callable[[], Mapping[str, bytes]] | None = None,
     events: RunEvents | None = None,
 ) -> RunResult:
-    """Run a task and own its tool resources through completion or cancellation."""
+    """Run a task and own its resources through completion or cancellation.
+
+    A callable input_files is evaluated when the task opens its workspace.
+    """
     if not task.strip():
         raise ValueError("A task must contain text.")
     if input_files and sandbox_factory is None:
@@ -31,16 +34,18 @@ async def run_agent(
     events = events if events is not None else RunEvents()
     tools = tools if tools is not None else ToolRegistry()
     session = Session([Message(role="user", content=task)])
-    inputs = tuple(input_files.items()) if input_files else ()
+    inputs = dict(input_files) if isinstance(input_files, Mapping) else input_files
     events.emit("run.started", model=spec.model)
 
     @asynccontextmanager
     async def open_sandbox():
         if sandbox_factory is None:
             raise RuntimeError("This run has no sandbox backend configured.")
+        files = await asyncio.to_thread(inputs) if callable(inputs) else inputs
         async with sandbox_factory.open(events.run_id) as environment:
-            for path, content in inputs:
-                await environment.put_file(path, content)
+            if files is not None:
+                for path, content in files.items():
+                    await environment.put_file(path, content)
             yield environment
 
     try:

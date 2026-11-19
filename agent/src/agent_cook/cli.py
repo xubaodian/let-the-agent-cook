@@ -3,6 +3,7 @@ import asyncio
 import os
 import sys
 from dataclasses import replace
+from functools import partial
 from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -64,13 +65,10 @@ async def _run(
         events = RunEvents(lambda event: write_jsonl(trace, event), run_id=run_id)
         async with AsyncOpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL) as client:
             registry = None
-            if factory is not None or skills is not None:
-                exporter = (
-                    ArtifactExporter(trace_path.parent / f"{run_id}-artifacts")
-                    if factory is not None else None
-                )
-                registry, tool_names = workspace_tools(exporter, skills=skills)
-                if image_model is not None and factory is not None:
+            if factory is not None:
+                exporter = ArtifactExporter(trace_path.parent / f"{run_id}-artifacts")
+                registry, tool_names = workspace_tools(exporter)
+                if image_model is not None:
                     image_tool = register_image_tool(registry, OpenRouterImageGenerator(client, image_model))
                     tool_names = (*tool_names, image_tool)
                 spec = replace(
@@ -83,7 +81,7 @@ async def _run(
                 model=OpenRouterModel(client),
                 tools=registry,
                 sandbox_factory=factory,
-                input_files=inputs,
+                input_files=partial(skills.workspace_files, inputs) if skills is not None else inputs,
                 events=events,
             )
 
@@ -117,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if (args.input or args.sandbox_network) and args.sandbox is None:
         parser.error("--input and --sandbox-network require --sandbox.")
+    if args.skills_dir and args.sandbox is None:
+        parser.error("--skills-dir requires --sandbox.")
     if args.image_model is not None and args.sandbox is None:
         parser.error("--image-model requires --sandbox.")
     image_model = args.image_model if args.image_model is not None else os.environ.get("OPENROUTER_IMAGE_MODEL", "")
