@@ -1,0 +1,13 @@
+**
+!agent/
+!agent/src/
+!agent/src/agent_cook/
+!agent/src/agent_cook/__init__.py
+!agent/src/agent_cook/sandbox/
+!agent/src/agent_cook/sandbox/__init__.py
+!agent/src/agent_cook/sandbox/limits.py
+!agent/src/agent_cook/sandbox/paths.py
+!agent/src/agent_cook/sandbox/worker/
+!agent/src/agent_cook/sandbox/worker/*.py
+!sandbox/
+!sandbox/Dockerfile

@@ -1,5 +1,6 @@
 import asyncio
-from contextlib import AsyncExitStack
+from collections.abc import Mapping
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from agent_cook.core.loop import run_loop
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
@@ -18,16 +19,29 @@ async def run_agent(
     model: ModelClient,
     tools: ToolRegistry | None = None,
     sandbox_factory: SandboxFactory | None = None,
+    input_files: Mapping[str, bytes] | None = None,
     events: RunEvents | None = None,
 ) -> RunResult:
     """Run a task and own its tool resources through completion or cancellation."""
     if not task.strip():
         raise ValueError("A task must contain text.")
+    if input_files and sandbox_factory is None:
+        raise ValueError("Input files require a task sandbox.")
 
     events = events if events is not None else RunEvents()
     tools = tools if tools is not None else ToolRegistry()
     session = Session([Message(role="user", content=task)])
+    inputs = tuple(input_files.items()) if input_files else ()
     events.emit("run.started", model=spec.model)
+
+    @asynccontextmanager
+    async def open_sandbox():
+        if sandbox_factory is None:
+            raise RuntimeError("This run has no sandbox backend configured.")
+        async with sandbox_factory.open(events.run_id) as environment:
+            for path, content in inputs:
+                await environment.put_file(path, content)
+            yield environment
 
     try:
         async with AsyncExitStack() as resources:
@@ -38,11 +52,7 @@ async def run_agent(
                 nonlocal sandbox
                 async with sandbox_lock:
                     if sandbox is None:
-                        if sandbox_factory is None:
-                            raise RuntimeError("This run has no sandbox backend configured.")
-                        sandbox = await resources.enter_async_context(
-                            sandbox_factory.open(events.run_id)
-                        )
+                        sandbox = await resources.enter_async_context(open_sandbox())
                     return sandbox
 
             tool_context = ToolContext(events.run_id, frozenset(spec.tool_names), get_sandbox)

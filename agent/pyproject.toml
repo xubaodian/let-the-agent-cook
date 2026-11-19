@@ -12,6 +12,9 @@ dependencies = [
     "openai>=1.66,<3",
 ]
 
+[project.optional-dependencies]
+e2b = ["e2b>=2.56,<3"]
+
 [project.scripts]
 agent-cook = "agent_cook.cli:main"
 

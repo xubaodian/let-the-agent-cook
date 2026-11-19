@@ -7,7 +7,10 @@ from typing import NoReturn
 
 from jsonschema import Draft202012Validator, ValidationError
 
-from agent_cook.tools.spec import ToolCall, ToolContext, ToolDefinition, ToolHandler, ToolResult
+from agent_cook.sandbox.interface import SandboxError
+from agent_cook.tools.spec import (
+    ToolCall, ToolContext, ToolDefinition, ToolError, ToolHandler, ToolResult,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +63,8 @@ class ToolRegistry:
 
         try:
             result = await binding.handler(arguments, context)
+        except (ToolError, SandboxError) as error:
+            return ToolResult(str(error), is_error=True)
         except Exception as error:
             return ToolResult(f"Tool '{call.name}' failed ({type(error).__name__}).", is_error=True)
         if not isinstance(result, ToolResult):
