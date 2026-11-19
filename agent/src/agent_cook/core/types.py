@@ -24,6 +24,27 @@ class AgentSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class SubagentSpec:
+    name: str
+    description: str
+    instructions: str
+    tool_names: tuple[str, ...] = ()
+    model: str | None = None
+    max_model_turns: int = 4
+    timeout_seconds: float = 45.0
+
+    def __post_init__(self) -> None:
+        if not all(value.strip() for value in (self.name, self.description, self.instructions)):
+            raise ValueError("A subagent requires a name, description, and instructions.")
+        if self.model is not None and not self.model.strip():
+            raise ValueError("A subagent model ID must contain text.")
+        if self.max_model_turns < 1 or not isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
+            raise ValueError("Subagent turn and time limits must be positive and finite.")
+        if len(set(self.tool_names)) != len(self.tool_names):
+            raise ValueError("Each tool can be enabled only once per subagent.")
+
+
+@dataclass(frozen=True, slots=True)
 class RunResult:
     run_id: str
     text: str

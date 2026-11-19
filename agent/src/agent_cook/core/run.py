@@ -1,15 +1,17 @@
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import replace
 
+from agent_cook.core.delegation import DELEGATE_TOOL, register_delegate
 from agent_cook.core.loop import run_loop
-from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
+from agent_cook.core.types import AgentRunError, AgentSpec, RunResult, SubagentSpec
 from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelClient
 from agent_cook.sandbox.interface import Sandbox, SandboxFactory
 from agent_cook.state.session import Message, Session
 from agent_cook.tools.registry import ToolRegistry
-from agent_cook.tools.spec import ToolContext
+from agent_cook.tools.spec import ToolContext, ToolHook
 
 
 async def run_agent(
@@ -21,6 +23,8 @@ async def run_agent(
     sandbox_factory: SandboxFactory | None = None,
     input_files: Mapping[str, bytes] | Callable[[], Mapping[str, bytes]] | None = None,
     events: RunEvents | None = None,
+    subagents: Sequence[SubagentSpec] = (),
+    hook: ToolHook | None = None,
 ) -> RunResult:
     """Run a task and own its resources through completion or cancellation.
 
@@ -33,6 +37,10 @@ async def run_agent(
 
     events = events if events is not None else RunEvents()
     tools = tools if tools is not None else ToolRegistry()
+    if subagents:
+        tools = tools.copy()
+        register_delegate(tools, subagents, spec, model)
+        spec = replace(spec, tool_names=(*spec.tool_names, DELEGATE_TOOL))
     session = Session([Message(role="user", content=task)])
     inputs = dict(input_files) if isinstance(input_files, Mapping) else input_files
     events.emit("run.started", model=spec.model)
@@ -60,7 +68,7 @@ async def run_agent(
                         sandbox = await resources.enter_async_context(open_sandbox())
                     return sandbox
 
-            tool_context = ToolContext(events.run_id, frozenset(spec.tool_names), get_sandbox)
+            tool_context = ToolContext(events.run_id, frozenset(spec.tool_names), get_sandbox, events, hook)
             deadline = asyncio.timeout(spec.timeout_seconds)
             try:
                 async with deadline:

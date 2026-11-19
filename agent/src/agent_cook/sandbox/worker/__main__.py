@@ -6,7 +6,7 @@ from typing import Any, BinaryIO
 
 from agent_cook.sandbox.limits import MAX_RPC_BYTES, WORKER_VERSION, WORKSPACE_ROOT
 from agent_cook.sandbox.worker.browser import playwright_preview
-from agent_cook.sandbox.worker.process import run_command
+from agent_cook.sandbox.worker.process import run_command, run_hook
 from agent_cook.sandbox.worker.workspace import (
     Workspace,
     copy_file,
@@ -25,6 +25,7 @@ _OPERATIONS = {
     "playwright": playwright_preview,
     "read_file": read_file,
     "run_command": run_command,
+    "run_hook": run_hook,
     "search_files": search_files,
     "upload": upload,
     "write_file": write_file,

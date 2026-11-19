@@ -24,6 +24,11 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._bindings: dict[str, _Binding] = {}
 
+    def copy(self) -> "ToolRegistry":
+        registry = ToolRegistry()
+        registry._bindings = self._bindings.copy()
+        return registry
+
     def register(self, definition: ToolDefinition, handler: ToolHandler) -> None:
         if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", definition.name) is None:
             raise ValueError("A tool name must be 1 to 64 letters, digits, underscores, or hyphens.")
@@ -62,13 +67,23 @@ class ToolRegistry:
             return ToolResult(f"Tool arguments at {location} failed schema validation.", is_error=True)
 
         try:
-            result = await binding.handler(arguments, context)
+            if context.hook is not None:
+                await context.hook("before_tool", call, arguments, context, None)
         except (ToolError, SandboxError) as error:
             return ToolResult(str(error), is_error=True)
         except Exception as error:
             return ToolResult(f"Tool '{call.name}' failed ({type(error).__name__}).", is_error=True)
+
+        try:
+            result = await binding.handler(arguments, context)
+        except (ToolError, SandboxError) as error:
+            result = ToolResult(str(error), is_error=True)
+        except Exception as error:
+            result = ToolResult(f"Tool '{call.name}' failed ({type(error).__name__}).", is_error=True)
         if not isinstance(result, ToolResult):
-            return ToolResult(f"Tool '{call.name}' returned an invalid result.", is_error=True)
+            result = ToolResult(f"Tool '{call.name}' returned an invalid result.", is_error=True)
+        if context.hook is not None:
+            await context.hook("after_tool", call, arguments, context, result)
         return result
 
 

@@ -39,6 +39,8 @@ flowchart TD
 
 使用 Docker 或 E2B 沙箱时，可以用 `--skills-dir` 配置本机的 Skill 目录，可重复指定。目录包含一组 Skill 子目录，每项以带 YAML frontmatter 的 `SKILL.md` 为入口，`name` 与目录名一致。
 
+用 `--skill` 指定本次任务需要的 Skill。使用 JSON 任务请求时，通过 `skills.mount` 指定名单。[Plugin 和任务扩展](plugins.md)
+
 ```bash
 uv run --project agent agent-cook --sandbox docker --skills-dir /path/to/skills \
   '找到适合这个任务的 Skill，并说明它的步骤。'

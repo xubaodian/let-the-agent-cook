@@ -14,21 +14,27 @@ class RunEvents:
         sink: Callable[[RunEvent], None] | None = None,
         *,
         run_id: str | None = None,
+        parent: "RunEvents | None" = None,
     ) -> None:
         self.run_id = run_id or uuid4().hex
         self._sink = sink
         self._seq = 0
+        self.parent_run_id = parent.run_id if parent is not None else None
+        self._root = parent._root if parent is not None else self
+
+    def child(self) -> "RunEvents":
+        return RunEvents(self._sink, parent=self)
 
     def emit(self, event_type: str, **data: object) -> None:
         if self._sink is None:
             return
-        self._seq += 1
+        self._root._seq += 1
         self._sink(
             RunEvent(
                 run_id=self.run_id,
-                root_run_id=self.run_id,
-                parent_run_id=None,
-                seq=self._seq,
+                root_run_id=self._root.run_id,
+                parent_run_id=self.parent_run_id,
+                seq=self._root._seq,
                 timestamp=datetime.now(UTC).isoformat(),
                 type=event_type,
                 data=data,
