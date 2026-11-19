@@ -117,6 +117,6 @@ class SkillTest(unittest.TestCase):
         })
         with self.assertRaisesRegex(SandboxError, "conflicts"):
             catalog.workspace_files({"example": b"already here"})
-        with patch("agent_cook.extensions.skills.MAX_TRANSFER_BYTES", len(self.entry.read_bytes())):
-            with self.assertRaisesRegex(SandboxError, "transfer limit"):
+        with patch("agent_cook.extensions.files.MAX_TRANSFER_BYTES", len(self.entry.read_bytes())):
+            with self.assertRaisesRegex(SandboxError, "limit"):
                 catalog.workspace_files({"input.txt": b"original"})

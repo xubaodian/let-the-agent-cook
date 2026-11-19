@@ -18,6 +18,8 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 
 使用沙箱时，可以用 `--skills-dir` 配置本机 Skill。模型先接收名称、描述和工作区入口，可用 `ls` 和 `read_file` 按需浏览和读取。[按需读取 Skill](docs/workspace-tools.md#按需读取-skill)
 
+用 `--request run.json` 指定本次任务的插件、Skill 挂载名单和 MCP 工具，也可以直接传 `--plugin`、`--skill` 和 `--mcp-tool`。插件可以声明子 Agent、工具 Hook 和 MCP 服务。[Plugin 和任务扩展](docs/plugins.md)
+
 ## Agent 包的目录
 
 `agent/pyproject.toml` 定义依赖和 CLI。下面的路径相对于 `agent/src/agent_cook/`。
@@ -29,10 +31,10 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 | `context/` | `builder.py` 从指令和会话历史组装本轮模型输入。 |
 | `model/` | `client.py` 定义模型接口。`openrouter.py` 负责 Chat Completions 的消息和工具调用格式。 |
 | `tools/` | `spec.py` 和 `registry.py` 管工具契约、授权和分派。`workspace.py` 注册工作区工具，`images.py` 接入生图，`artifacts.py` 导出交付文件。 |
-| `extensions/` | `skills.py` 发现 Skill 元数据并提供工作区所需的包文件。 |
+| `extensions/` | 加载插件清单、Skill 包、子 Agent 定义、工具 Hook 和 MCP 配置。 |
 | `sandbox/` | `interface.py` 定义任务环境接口。`docker.py` 和 `e2b.py` 管各自的生命周期和传输。`worker/` 在沙箱内执行共用操作。 |
 | `state/` | 保存单次 Run 中原始消息及其工具调用关联。 |
-| `protocol/` | 定义可序列化的 RunEvent、ArtifactRef 和 UiAttachment，供未来的前端和回放读取。 |
+| `protocol/` | 定义任务入口、RunEvent、ArtifactRef 和 UiAttachment，供宿主接入和回放读取。 |
 | `events/` | 为执行事件编号并写入 JSONL。 |
 
 一个 Run 在首次需要时获取沙箱。之后的工具共用同一任务环境，Run 在完成、失败或取消时退出该环境。工具记录与会话历史分别服务于回放和模型输入。
@@ -40,9 +42,9 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 ## 扩展接入点
 
 - **上下文压缩**放进 `context/`，在完整工具轮次结束后生成检查点。会话历史由 `state/` 管理。
-- **Skill、Plugin 和 MCP**集中到 `extensions/`。Skill 按需加载，Plugin 装配声明，MCP 把外部工具注册到同一个工具注册表。
+- **Skill、Plugin 和 MCP**集中到 `extensions/`。任务请求选定 Skill，Plugin 装配声明，MCP 把外部工具注册到同一个工具注册表。
 - **新的沙箱后端**实现 `sandbox/interface.py`，通过共用的工作区执行模块提供现有工具行为。仓库根目录的 `sandbox/` 放运行镜像。
-- **子 Agent**由 `core/` 调用同一个运行入口。父 Run 分配工作区、工具和预算，并收回子任务的产物。
+- **子 Agent**由 `core/` 复用模型循环同步执行。父 Run 分配工作区、工具和预算，并收回子任务的产物。
 - **作品站**从 `examples/` 中的公开轨迹和产物读取数据。`site/` 负责界面渲染，包括实时宿主适配和静态回放。
 
 ## 本地验证

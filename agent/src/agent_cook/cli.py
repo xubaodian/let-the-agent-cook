@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 import sys
+from contextlib import AsyncExitStack
 from dataclasses import replace
 from functools import partial
 from math import ceil
@@ -12,8 +13,11 @@ from uuid import uuid4
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.events.journal import RunEvents, write_jsonl
+from agent_cook.extensions.hooks import HookRunner
+from agent_cook.extensions.mcp import register_mcp_tools
 from agent_cook.model.openrouter import OPENROUTER_BASE_URL, OpenRouterModel
 from agent_cook.model.openrouter_images import OpenRouterImageGenerator
+from agent_cook.protocol.request import RunRequest
 from agent_cook.sandbox.docker import DEFAULT_DOCKER_IMAGE, DockerSandboxFactory
 from agent_cook.sandbox.e2b import E2BSandboxFactory
 from agent_cook.sandbox.interface import SandboxError, SandboxFactory
@@ -21,9 +25,11 @@ from agent_cook.sandbox.limits import MAX_FILE_BYTES, MAX_TRANSFER_BYTES
 from agent_cook.sandbox.paths import workspace_path
 from agent_cook.tools.artifacts import ArtifactExporter
 from agent_cook.tools.images import register_image_tool
+from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.workspace import workspace_tools
 
 if TYPE_CHECKING:
+    from agent_cook.extensions.plugins import Plugin
     from agent_cook.extensions.skills import SkillCatalog
 
 
@@ -57,23 +63,42 @@ async def _run(
     *,
     image_model: str | None = None,
     skills: "SkillCatalog | None" = None,
+    plugins: "tuple[Plugin, ...]" = (),
+    mcp_tools: tuple[str, ...] | None = None,
 ) -> RunResult:
     from openai import AsyncOpenAI
 
     trace_path.parent.mkdir(parents=True, exist_ok=True)
     with trace_path.open("x", encoding="utf-8") as trace:
         events = RunEvents(lambda event: write_jsonl(trace, event), run_id=run_id)
-        async with AsyncOpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL) as client:
-            registry = None
+        async with AsyncExitStack() as resources:
+            client = await resources.enter_async_context(AsyncOpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL))
+            registry = ToolRegistry()
+            tool_names: tuple[str, ...] = ()
             if factory is not None:
                 exporter = ArtifactExporter(trace_path.parent / f"{run_id}-artifacts")
                 registry, tool_names = workspace_tools(exporter)
                 if image_model is not None:
                     image_tool = register_image_tool(registry, OpenRouterImageGenerator(client, image_model))
                     tool_names = (*tool_names, image_tool)
-                spec = replace(
-                    spec, tool_names=tool_names,
-                    instructions=skills.instructions(spec.instructions) if skills is not None else spec.instructions,
+            servers = tuple(server for plugin in plugins for server in plugin.mcp_servers)
+            mcp_names = await register_mcp_tools(resources, registry, servers, selected=mcp_tools)
+            tool_names += mcp_names
+            spec = replace(
+                spec, tool_names=tool_names,
+                instructions=skills.instructions(spec.instructions) if skills is not None else spec.instructions,
+            )
+            hooks = tuple(hook for plugin in plugins for hook in plugin.hooks)
+            trees = tuple(tree for plugin in plugins for tree in plugin.files)
+            workspace_inputs = (
+                partial(skills.workspace_files, inputs, extra_trees=trees)
+                if skills is not None and (skills.names or trees) else inputs
+            )
+            if plugins or skills is not None or mcp_tools is not None:
+                events.emit(
+                    "extensions.loaded", plugins=[plugin.name for plugin in plugins],
+                    skills=list(skills.names) if skills is not None else [],
+                    mcp_tools=list(mcp_names),
                 )
             return await run_agent(
                 spec,
@@ -81,14 +106,17 @@ async def _run(
                 model=OpenRouterModel(client),
                 tools=registry,
                 sandbox_factory=factory,
-                input_files=partial(skills.workspace_files, inputs) if skills is not None else inputs,
+                input_files=workspace_inputs,
                 events=events,
+                subagents=tuple(agent for plugin in plugins for agent in plugin.subagents),
+                hook=HookRunner(hooks) if hooks else None,
             )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one task with the OpenRouter model you configure.")
-    parser.add_argument("task", help="Text to send to the agent")
+    parser.add_argument("task", nargs="?", help="Text to send to the agent")
+    parser.add_argument("--request", type=Path, help="Read the task and enabled extensions from a JSON request")
     parser.add_argument(
         "--model", default=os.environ.get("OPENROUTER_MODEL"), help="OpenRouter model ID"
     )
@@ -101,6 +129,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--skills-dir", action="append", type=Path, default=[], help="Load a directory of Skill packages",
     )
+    parser.add_argument("--skill", action="append", help="Mount a named Skill. Repeat to select several.")
+    parser.add_argument("--plugin", action="append", type=Path, default=[], help="Enable a local plugin directory")
+    parser.add_argument("--mcp-tool", action="append", help="Enable an MCP tool by server/tool. Repeat to select several.")
     parser.add_argument("--max-turns", type=int, default=8, help="Maximum number of model turns")
     parser.add_argument("--timeout", type=float, default=120, help="Run time limit in seconds")
     args = parser.parse_args(argv)
@@ -110,8 +141,12 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Set OPENROUTER_API_KEY before running the agent.")
     if not args.model or not args.model.strip():
         parser.error("Set OPENROUTER_MODEL or pass --model with an OpenRouter model ID.")
-    if not args.task.strip():
-        parser.error("Provide a task with at least one non-whitespace character.")
+    if args.request is not None and (
+        args.task is not None or args.plugin or args.skills_dir or args.skill or args.mcp_tool
+    ):
+        parser.error("Specify the task and extension selections in the JSON file when using --request.")
+    if args.request is None and (args.task is None or not args.task.strip()):
+        parser.error("Provide a task with at least one non-whitespace character, or pass --request.")
 
     if (args.input or args.sandbox_network) and args.sandbox is None:
         parser.error("--input and --sandbox-network require --sandbox.")
@@ -121,6 +156,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--image-model requires --sandbox.")
     image_model = args.image_model if args.image_model is not None else os.environ.get("OPENROUTER_IMAGE_MODEL", "")
     try:
+        request = RunRequest.from_file(args.request) if args.request is not None else RunRequest(
+            task=args.task, plugins=tuple(args.plugin), skill_directories=tuple(args.skills_dir),
+            mounted_skills=tuple(args.skill) if args.skill is not None else None,
+            mcp_tools=tuple(args.mcp_tool) if args.mcp_tool is not None else None,
+        )
         spec = AgentSpec(
             model=args.model.strip(), max_model_turns=args.max_turns, timeout_seconds=args.timeout
         )
@@ -136,11 +176,23 @@ def main(argv: list[str] | None = None) -> int:
                 lifetime_seconds=ceil(spec.timeout_seconds) + 60,
             )
         inputs = _input_files(args.input)
+        plugins = ()
+        if request.plugins:
+            from agent_cook.extensions.plugins import load_plugins
+
+            plugins = load_plugins(request.plugins)
+        skill_directories = (*request.skill_directories, *(
+            plugin.skills_dir for plugin in plugins if plugin.skills_dir is not None
+        ))
         skills = None
-        if args.skills_dir:
+        if plugins or skill_directories or request.mounted_skills is not None:
             from agent_cook.extensions.skills import SkillCatalog
 
-            skills = SkillCatalog(args.skills_dir)
+            skills = SkillCatalog(skill_directories, request.mounted_skills)
+        if factory is None and (
+            (skills is not None and skills.names) or any(plugin.hooks or plugin.files for plugin in plugins)
+        ):
+            raise ValueError("Mounted skills, plugin files, and hooks require --sandbox.")
     except (OSError, ValueError) as error:
         parser.error(str(error))
 
@@ -149,8 +201,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         result = asyncio.run(_run(
-            spec, args.task, api_key, trace_path, run_id, factory, inputs,
-            image_model=image_model.strip() or None, skills=skills,
+            spec, request.task, api_key, trace_path, run_id, factory, inputs,
+            image_model=image_model.strip() or None, skills=skills, plugins=plugins,
+            mcp_tools=request.mcp_tools,
         ))
     except KeyboardInterrupt:
         print("Run cancelled.", file=sys.stderr)

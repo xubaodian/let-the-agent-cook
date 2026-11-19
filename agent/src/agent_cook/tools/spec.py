@@ -1,6 +1,7 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from agent_cook.events.journal import RunEvents
 from agent_cook.protocol.artifacts import ArtifactRef
 from agent_cook.protocol.ui import UiAttachment
 from agent_cook.sandbox.interface import Sandbox
@@ -28,11 +29,18 @@ class ToolResult:
     ui: UiAttachment | None = None
 
 
+ToolHook = Callable[
+    [str, ToolCall, dict[str, object], "ToolContext", ToolResult | None], Awaitable[None],
+]
+
+
 @dataclass(frozen=True, slots=True)
 class ToolContext:
     run_id: str
     allowed_tools: frozenset[str]
     get_sandbox: Callable[[], Awaitable[Sandbox]]
+    events: RunEvents | None = None
+    hook: ToolHook | None = None
 
 
 class ToolError(RuntimeError):

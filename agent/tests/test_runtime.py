@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
 from agent_cook.core.run import run_agent
-from agent_cook.core.types import AgentRunError, AgentSpec
+from agent_cook.core.types import AgentRunError, AgentSpec, SubagentSpec
 from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelTurn
 from agent_cook.protocol.artifacts import ArtifactRef
@@ -210,3 +210,35 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
                 events=RunEvents(records.append),
             )
         self.assertEqual(records[-1].type, "run.failed")
+
+    async def test_subagent_timeout_returns_an_error_to_the_parent(self):
+        model = AsyncMock()
+        records = []
+
+        async def next_turn(messages, **_):
+            if messages[0].role == "system":
+                await asyncio.Event().wait()
+            if messages[-1].role == "user":
+                return tool_turn(ToolCall(
+                    "delegate-call", "delegate", '{"agent":"reviewer","task":"Check this"}',
+                ))
+            self.assertEqual(messages[-1].role, "tool")
+            self.assertIn("Subagent 'reviewer' timed out", messages[-1].content)
+            return ModelTurn(Message("assistant", "I can continue."), "stop")
+
+        model.next_turn.side_effect = next_turn
+        registry = ToolRegistry()
+        result = await run_agent(
+            AgentSpec("fixture/model"),
+            "Review",
+            model=model,
+            tools=registry,
+            subagents=(SubagentSpec("reviewer", "Reviews content.", "Review only.", timeout_seconds=0.01),),
+            events=RunEvents(records.append, run_id="parent"),
+        )
+        self.assertEqual(result.text, "I can continue.")
+        self.assertEqual(records[-1].type, "run.completed")
+        failure = next(event for event in records if event.type == "run.failed")
+        self.assertEqual(failure.parent_run_id, "parent")
+        with self.assertRaisesRegex(ValueError, "no registered handler"):
+            registry.definitions(("delegate",))
