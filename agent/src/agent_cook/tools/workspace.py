@@ -1,14 +1,20 @@
 import json
+from collections.abc import Callable
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent_cook.protocol.ui import UiAttachment
 from agent_cook.sandbox.limits import MAX_COMMAND_SECONDS, MAX_FIND_RESULTS, MAX_WRITE_BYTES
+from agent_cook.sandbox.paths import SKILL_URI_PREFIX
 from agent_cook.tools.artifacts import ArtifactExporter
 from agent_cook.tools.registry import ToolRegistry
-from agent_cook.tools.spec import ToolContext, ToolDefinition, ToolHandler, ToolResult
+from agent_cook.tools.spec import ToolContext, ToolDefinition, ToolError, ToolHandler, ToolResult
+
+if TYPE_CHECKING:
+    from agent_cook.extensions.skills import SkillCatalog
 
 _PATH = {"type": "string", "minLength": 1, "maxLength": 1024}
+_BROWSE_PATH = {**_PATH, "maxLength": 1024 + len(SKILL_URI_PREFIX)}
 _ARGV = {
     "type": "array",
     "minItems": 1,
@@ -30,19 +36,30 @@ def _definition(
     })
 
 
+_LIST_ARGUMENTS = {
+    "directory": _BROWSE_PATH,
+    "recursive": _BOOLEAN,
+    "kind": {"enum": ["all", "file", "directory"]},
+    "max_results": _COUNT,
+    "cursor": {**_BROWSE_PATH, "description": "The next_cursor from the previous listing with the same options."},
+}
+_LS = _definition(
+    "ls", "List files and directories. Defaults to one level at the workspace root. "
+    "Use a workspace-relative directory or a skill:// directory. Continue with next_cursor.",
+    _LIST_ARGUMENTS,
+)
+_LIST_FILES = _definition("list_files", "Alias for ls.", _LIST_ARGUMENTS)
+_READ = _definition(
+    "read_file", "Read UTF-8 text by line from a workspace-relative path or a skill:// path. "
+    "Use next_line to continue.",
+    {
+        "path": _BROWSE_PATH,
+        "start_line": {"type": "integer", "minimum": 1},
+        "line_count": {"type": "integer", "minimum": 1, "maximum": 500},
+    }, ("path",),
+)
+
 _FILES = (
-    _definition(
-        "list_files", "List files and directories relative to the workspace.",
-        {"directory": _PATH, "recursive": _BOOLEAN, "max_results": _COUNT},
-    ),
-    _definition(
-        "read_file", "Read a UTF-8 workspace file by line. Use next_line to continue.",
-        {
-            "path": _PATH,
-            "start_line": {"type": "integer", "minimum": 1},
-            "line_count": {"type": "integer", "minimum": 1, "maximum": 500},
-        }, ("path",),
-    ),
     _definition(
         "search_files",
         "Find files by a workspace-relative glob and optionally match literal text with line numbers.",
@@ -121,6 +138,30 @@ def _operation(name: str) -> ToolHandler:
     return handle
 
 
+def _browse(
+    worker_operation: str, path_argument: str, skill_operation: Callable[..., dict[str, Any]] | None,
+    *, has_workspace: bool,
+) -> ToolHandler:
+    workspace_operation = _operation(worker_operation)
+
+    async def handle(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+        if arguments.get(path_argument, ".").startswith(SKILL_URI_PREFIX):
+            if skill_operation is None:
+                raise ToolError("This run has no configured skill directories.")
+            try:
+                result = skill_operation(**arguments)
+            except OSError as error:
+                raise ToolError("Could not open the requested skill file or directory.") from error
+            except ValueError as error:
+                raise ToolError(str(error)) from error
+            return ToolResult(json.dumps(result, ensure_ascii=False))
+        if not has_workspace:
+            raise ToolError("Workspace paths require a sandbox. Use skill:// to browse configured skills.")
+        return await workspace_operation(arguments, context)
+
+    return handle
+
+
 async def _run_command(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     sandbox = await context.get_sandbox()
     result = await sandbox.exec(
@@ -147,8 +188,24 @@ async def _preview(arguments: dict[str, Any], context: ToolContext) -> ToolResul
     return ToolResult(json.dumps(result, ensure_ascii=False))
 
 
-def workspace_tools(exporter: ArtifactExporter) -> tuple[ToolRegistry, tuple[str, ...]]:
+def workspace_tools(
+    exporter: ArtifactExporter | None, *, skills: "SkillCatalog | None" = None,
+) -> tuple[ToolRegistry, tuple[str, ...]]:
     registry = ToolRegistry()
+    list_handler = _browse(
+        "list_files", "directory", skills.list_files if skills is not None else None,
+        has_workspace=exporter is not None,
+    )
+    registry.register(_LS, list_handler)
+    registry.register(_LIST_FILES, list_handler)
+    registry.register(_READ, _browse(
+        "read_file", "path", skills.read_file if skills is not None else None,
+        has_workspace=exporter is not None,
+    ))
+    browse_names = (_LS.name, _LIST_FILES.name, _READ.name)
+    if exporter is None:
+        return registry, browse_names
+
     for definition in _FILES:
         registry.register(definition, _operation(definition.name))
     registry.register(_COMMAND, _run_command)
@@ -164,4 +221,4 @@ def workspace_tools(exporter: ArtifactExporter) -> tuple[ToolRegistry, tuple[str
         )
 
     registry.register(_SUBMIT, submit)
-    return registry, tuple(spec.name for spec in (*_FILES, _COMMAND, _BROWSER, _SUBMIT))
+    return registry, (*browse_names, *(spec.name for spec in (*_FILES, _COMMAND, _BROWSER, _SUBMIT)))

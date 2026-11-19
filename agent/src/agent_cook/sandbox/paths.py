@@ -1,11 +1,14 @@
 from pathlib import PurePosixPath
 
 
+SKILL_URI_PREFIX = "skill://"
+
+
 def workspace_path(value: str, *, allow_root: bool = False) -> str:
     if (
         not value
         or len(value.encode("utf-8")) > 1024
-        or value.startswith("/")
+        or value.startswith(("/", SKILL_URI_PREFIX))
         or "\\" in value
         or any(ord(char) < 32 for char in value)
         or ".." in value.split("/")

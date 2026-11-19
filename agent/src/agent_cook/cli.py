@@ -5,6 +5,7 @@ import sys
 from dataclasses import replace
 from math import ceil
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from agent_cook.core.run import run_agent
@@ -20,6 +21,9 @@ from agent_cook.sandbox.paths import workspace_path
 from agent_cook.tools.artifacts import ArtifactExporter
 from agent_cook.tools.images import register_image_tool
 from agent_cook.tools.workspace import workspace_tools
+
+if TYPE_CHECKING:
+    from agent_cook.extensions.skills import SkillCatalog
 
 
 def _input_files(paths: list[Path]) -> dict[str, bytes]:
@@ -51,6 +55,7 @@ async def _run(
     inputs: dict[str, bytes],
     *,
     image_model: str | None = None,
+    skills: "SkillCatalog | None" = None,
 ) -> RunResult:
     from openai import AsyncOpenAI
 
@@ -59,13 +64,19 @@ async def _run(
         events = RunEvents(lambda event: write_jsonl(trace, event), run_id=run_id)
         async with AsyncOpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL) as client:
             registry = None
-            if factory is not None:
-                exporter = ArtifactExporter(trace_path.parent / f"{run_id}-artifacts")
-                registry, tool_names = workspace_tools(exporter)
-                if image_model is not None:
+            if factory is not None or skills is not None:
+                exporter = (
+                    ArtifactExporter(trace_path.parent / f"{run_id}-artifacts")
+                    if factory is not None else None
+                )
+                registry, tool_names = workspace_tools(exporter, skills=skills)
+                if image_model is not None and factory is not None:
                     image_tool = register_image_tool(registry, OpenRouterImageGenerator(client, image_model))
                     tool_names = (*tool_names, image_tool)
-                spec = replace(spec, tool_names=tool_names)
+                spec = replace(
+                    spec, tool_names=tool_names,
+                    instructions=skills.instructions(spec.instructions) if skills is not None else spec.instructions,
+                )
             return await run_agent(
                 spec,
                 task,
@@ -89,6 +100,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--docker-image", default=DEFAULT_DOCKER_IMAGE, help="Prebuilt local sandbox image")
     parser.add_argument("--sandbox-network", action="store_true", help="Enable outbound sandbox networking")
     parser.add_argument("--input", action="append", type=Path, default=[], help="Copy a local input file into the workspace")
+    parser.add_argument(
+        "--skills-dir", action="append", type=Path, default=[], help="Load a directory of Skill packages",
+    )
     parser.add_argument("--max-turns", type=int, default=8, help="Maximum number of model turns")
     parser.add_argument("--timeout", type=float, default=120, help="Run time limit in seconds")
     args = parser.parse_args(argv)
@@ -122,6 +136,11 @@ def main(argv: list[str] | None = None) -> int:
                 lifetime_seconds=ceil(spec.timeout_seconds) + 60,
             )
         inputs = _input_files(args.input)
+        skills = None
+        if args.skills_dir:
+            from agent_cook.extensions.skills import SkillCatalog
+
+            skills = SkillCatalog(args.skills_dir)
     except (OSError, ValueError) as error:
         parser.error(str(error))
 
@@ -131,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = asyncio.run(_run(
             spec, args.task, api_key, trace_path, run_id, factory, inputs,
-            image_model=image_model.strip() or None,
+            image_model=image_model.strip() or None, skills=skills,
         ))
     except KeyboardInterrupt:
         print("Run cancelled.", file=sys.stderr)

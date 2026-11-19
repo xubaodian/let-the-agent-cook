@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, BinaryIO
 from uuid import uuid4
 
 from agent_cook.sandbox.limits import (
@@ -50,7 +50,8 @@ class Workspace:
         with self.directory(relative):
             return self.root / relative
 
-    def read_bytes(self, path: str, limit: int = MAX_FILE_BYTES) -> bytes:
+    @contextmanager
+    def open_file(self, path: str) -> Iterator[BinaryIO]:
         relative = PurePosixPath(workspace_path(path))
         with self.directory(relative.parent.as_posix()) as directory:
             flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
@@ -58,7 +59,11 @@ class Workspace:
             with os.fdopen(descriptor, "rb") as file:
                 if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
                     raise ValueError("The path must point to a regular workspace file.")
-                data = file.read(limit + 1)
+                yield file
+
+    def read_bytes(self, path: str, limit: int = MAX_FILE_BYTES) -> bytes:
+        with self.open_file(path) as file:
+            data = file.read(limit + 1)
         if len(data) > limit:
             raise ValueError(f"The file exceeds the {limit}-byte limit for this operation.")
         return data
@@ -107,7 +112,8 @@ class Workspace:
                     pass
 
     def entries(
-        self, directory: str, *, recursive: bool, skip_directories: frozenset[str] = frozenset()
+        self, directory: str, *, recursive: bool, skip_directories: frozenset[str] = frozenset(),
+        scan_limit: int = MAX_SCAN_ENTRIES,
     ) -> tuple[list[tuple[str, str]], bool]:
         pending = deque([workspace_path(directory, allow_root=True)])
         found: list[tuple[str, str]] = []
@@ -117,7 +123,7 @@ class Workspace:
             with self.directory(parent) as fd, os.scandir(fd) as entries:
                 for entry in entries:
                     count += 1
-                    if count > MAX_SCAN_ENTRIES:
+                    if count > scan_limit:
                         return sorted(found), True
                     try:
                         relative = workspace_path((PurePosixPath(parent) / entry.name).as_posix())
@@ -134,13 +140,27 @@ class Workspace:
 
 
 def list_files(
-    workspace: Workspace, directory: str = ".", recursive: bool = False, max_results: int = 80
+    workspace: Workspace, directory: str = ".", recursive: bool = False, max_results: int = 80,
+    kind: str = "all", cursor: str | None = None,
 ) -> dict[str, Any]:
     entries, scan_limited = workspace.entries(directory, recursive=recursive)
-    limit = min(max_results, MAX_FIND_RESULTS)
+    return page_entries(entries, scan_limited, max_results=max_results, kind=kind, cursor=cursor)
+
+
+def page_entries(
+    entries: list[tuple[str, str]], scan_limited: bool, *,
+    max_results: int, kind: str, cursor: str | None,
+) -> dict[str, Any]:
+    limit = max(1, min(max_results, MAX_FIND_RESULTS))
+    matches = [
+        (path, entry_kind) for path, entry_kind in entries
+        if (kind == "all" or kind == entry_kind) and (cursor is None or path > cursor)
+    ]
+    has_next_page = len(matches) > limit
     return {
-        "entries": [{"path": path, "kind": kind} for path, kind in entries[:limit]],
-        "truncated": scan_limited or len(entries) > limit,
+        "entries": [{"path": path, "kind": entry_kind} for path, entry_kind in matches[:limit]],
+        "truncated": scan_limited or has_next_page,
+        "next_cursor": matches[limit - 1][0] if has_next_page else None,
     }
 
 

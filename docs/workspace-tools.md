@@ -19,8 +19,8 @@ flowchart TD
 
 | 工具 | 接口与行为 |
 |---|---|
-| `list_files` | 按相对目录列出文件和子目录，可递归。结果带 `truncated`。 |
-| `read_file` | 按行读取 UTF-8 文本，`next_line` 可用于继续阅读。 |
+| `ls` / `list_files` | 列出文件和子目录。默认查看工作区根目录一层，可递归、按类型过滤和分页。 |
+| `read_file` | 按行读取工作区或已配置 Skill 的 UTF-8 文本，`next_line` 可用于继续阅读。 |
 | `search_files` | 按 glob 找文件，可选字面文本查询并返回行号。文本搜索会跳过常见依赖目录和二进制文件。 |
 | `write_file` | 原子写入整份 UTF-8 文本，按需创建父目录。`overwrite` 可以控制覆盖。 |
 | `copy_file` | 复制工作区里的单个文件，支持二进制，默认保留已有目标。 |
@@ -31,7 +31,22 @@ flowchart TD
 
 `run_command` 统一了命令执行入口。需要 shell 时，可以在 `argv` 中显式选择 `bash`。工作目录和执行超时由 worker 校验，命令超时会结束该进程组并返回已捕获的输出。[OpenAI Shell 工具指南](https://developers.openai.com/api/docs/guides/tools-shell)
 
-文件工具以工作区相对路径为边界，处理普通文件和目录。`playwright` 适合验证 Agent 生成的本地网页和启动的测试服务器，截图写回工作区。用 `submit_results` 选出交付文件，批次在全部读取成功后才出现在产物目录中。
+常规文件操作使用工作区相对路径。`playwright` 适合验证 Agent 生成的本地网页和启动的测试服务器，截图写回工作区。用 `submit_results` 选出交付文件，批次在全部读取成功后才出现在产物目录中。
+
+`ls` 的 `directory` 默认为 `.`。用 `kind=file` 或 `kind=directory` 筛选类型，用 `recursive=true` 查看子目录。结果按路径排序。下一页沿用原参数，将 `next_cursor` 传入 `cursor`。如果 `truncated=true` 且 `next_cursor` 为空，可以缩小目录范围继续查找。`list_files` 是 `ls` 的兼容入口。
+
+## 按需读取 Skill
+
+用 `--skills-dir` 挂载本机的 Skill 目录，可重复指定。目录包含一组 Skill 子目录，每项以带 YAML frontmatter 的 `SKILL.md` 为入口，`name` 与目录名一致。
+
+```bash
+uv run --project agent agent-cook --skills-dir /path/to/skills \
+  '找到适合这个任务的 Skill，并说明它的步骤。'
+```
+
+初始模型上下文只包含每项 Skill 的 `name`、`description` 和 `entry`。比如模型可以调用 `read_file` 读取 `skill://example/SKILL.md`，再用 `ls` 查看 `skill://example/references`，按需读取其中的文件。用 `ls` 查看 `skill://` 可列出已挂载的 Skill。
+
+`skill://` 是工具层的只读路径，映射到已配置目录中的实际文件。Skill 文件读取复用路径校验、符号链接限制和文本分页。只阅读 Skill 时可以在宿主直接完成。需要处理工作区文件或执行命令时，用 `--sandbox docker` 或 `--sandbox e2b`。
 
 ## 生图
 
