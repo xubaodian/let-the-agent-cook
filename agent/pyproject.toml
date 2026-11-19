@@ -22,3 +22,6 @@ agent-cook = "agent_cook.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"agent_cook.context" = ["execution_prompt.md"]

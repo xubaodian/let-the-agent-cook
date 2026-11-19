@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.events.journal import RunEvents, write_jsonl
@@ -132,6 +133,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skill", action="append", help="Mount a named Skill. Repeat to select several.")
     parser.add_argument("--plugin", action="append", type=Path, default=[], help="Enable a local plugin directory")
     parser.add_argument("--mcp-tool", action="append", help="Enable an MCP tool by server/tool. Repeat to select several.")
+    parser.add_argument(
+        "--context-window", type=int, default=DEFAULT_CONTEXT_POLICY.context_window,
+        help="Context window in tokens for the selected model (default: %(default)s).",
+    )
     parser.add_argument("--max-turns", type=int, default=8, help="Maximum number of model turns")
     parser.add_argument("--timeout", type=float, default=120, help="Run time limit in seconds")
     args = parser.parse_args(argv)
@@ -162,7 +167,8 @@ def main(argv: list[str] | None = None) -> int:
             mcp_tools=tuple(args.mcp_tool) if args.mcp_tool is not None else None,
         )
         spec = AgentSpec(
-            model=args.model.strip(), max_model_turns=args.max_turns, timeout_seconds=args.timeout
+            model=args.model.strip(), max_model_turns=args.max_turns, timeout_seconds=args.timeout,
+            context_policy=replace(DEFAULT_CONTEXT_POLICY, context_window=args.context_window),
         )
         factory: SandboxFactory | None = None
         if args.sandbox == "docker":

@@ -1,13 +1,16 @@
 from dataclasses import asdict
 
-from agent_cook.context.builder import build_context
+from agent_cook.context.budget import PromptBudget
+from agent_cook.context.compaction import ContextLimitError, prepare_context
+from agent_cook.context.prompts import execution_instructions
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelClient
 from agent_cook.protocol.artifacts import ArtifactRef
 from agent_cook.state.session import Message, Session
+from agent_cook.tools.artifacts import SUBMIT_RESULTS, stale_submissions
 from agent_cook.tools.registry import ToolRegistry
-from agent_cook.tools.spec import ToolContext
+from agent_cook.tools.spec import SubmittedFile, ToolContext
 
 
 async def run_loop(
@@ -20,17 +23,32 @@ async def run_loop(
     events: RunEvents,
 ) -> RunResult:
     definitions = tools.definitions(spec.tool_names)
+    require_submission = spec.require_submission
+    if require_submission is None:
+        require_submission = SUBMIT_RESULTS in spec.tool_names
+    if require_submission and SUBMIT_RESULTS not in spec.tool_names:
+        raise AgentRunError("Required file delivery needs the submit_results tool.")
+    instructions = execution_instructions(spec.instructions, require_submission=require_submission)
+    budget = PromptBudget(definitions)
     seen_calls: set[str] = set()
     artifacts: dict[str, ArtifactRef] = {}
+    submitted: dict[str, SubmittedFile] = {}
+    needs_submission = require_submission
 
     for turn_number in range(1, spec.max_model_turns + 1):
+        try:
+            messages = await prepare_context(
+                instructions, session, policy=spec.context_policy, budget=budget,
+                model=model, model_id=spec.model, events=events,
+            )
+        except ContextLimitError as error:
+            raise AgentRunError(str(error)) from error
         events.emit("model.started", turn=turn_number)
-        turn = await model.next_turn(
-            model=spec.model,
-            messages=build_context(spec.instructions, session),
-            tools=definitions,
+        turn = await model.next_turn(model=spec.model, messages=messages, tools=definitions)
+        budget.observe(messages, turn.prompt_tokens)
+        events.emit(
+            "model.finished", turn=turn_number, finish_reason=turn.finish_reason, prompt_tokens=turn.prompt_tokens,
         )
-        events.emit("model.finished", turn=turn_number, finish_reason=turn.finish_reason)
 
         if turn.finish_reason not in ("stop", "tool_calls"):
             raise AgentRunError(f"The model stopped before completing its turn ({turn.finish_reason}).")
@@ -40,7 +58,29 @@ async def run_loop(
             if turn.finish_reason == "tool_calls" or text is None or not text.strip():
                 raise AgentRunError("The model returned neither a final answer nor valid tool calls.")
             session.messages.append(message)
-            return RunResult(tool_context.run_id, text, tuple(artifacts.values()))
+            feedback = None
+            if needs_submission:
+                feedback = "Call submit_results to submit the final files before answering."
+            elif require_submission:
+                stale = await stale_submissions(await tool_context.get_sandbox(), submitted.values())
+                if stale:
+                    for path in stale:
+                        del submitted[path]
+                    needs_submission = True
+                    feedback = (
+                        f"These submissions changed or are missing in the workspace: {', '.join(stale)}. "
+                        "Verify the current deliverables and call submit_results before answering."
+                    )
+            if feedback:
+                if turn_number == spec.max_model_turns:
+                    raise AgentRunError(feedback)
+                session.messages.append(Message("user", f"Runtime completion check. {feedback}"))
+                events.emit("run.submission_required", turn=turn_number)
+                continue
+            final_artifacts = (
+                tuple(file.artifact for file in submitted.values()) if require_submission else tuple(artifacts.values())
+            )
+            return RunResult(tool_context.run_id, text, final_artifacts)
 
         if not definitions:
             raise AgentRunError("The model requested a tool while the run had no enabled tools.")
@@ -58,7 +98,12 @@ async def run_loop(
             session.messages.append(
                 Message(role="tool", content=result.model_content, tool_call_id=call.id)
             )
+            if result.is_error:
+                session.failed_tool_calls.add(call.id)
             events.emit("tool.finished", tool_call_id=call.id, name=call.name, is_error=result.is_error)
+            if require_submission and call.name == SUBMIT_RESULTS and not result.is_error and result.submitted_files:
+                needs_submission = False
+                submitted.update((file.workspace_path, file) for file in result.submitted_files)
             for artifact in result.artifacts:
                 previous = artifacts.get(artifact.id)
                 if previous is not None and previous != artifact:

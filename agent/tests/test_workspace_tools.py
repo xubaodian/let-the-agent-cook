@@ -5,14 +5,17 @@ import os
 import sys
 import unittest
 from contextlib import asynccontextmanager, redirect_stderr, redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from agent_cook.cli import main
+from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
+from agent_cook.context.prompts import CHECKPOINT_HEADINGS
 from agent_cook.core.run import run_agent
-from agent_cook.core.types import AgentSpec
+from agent_cook.core.types import AgentRunError, AgentSpec
 from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelTurn
 from agent_cook.sandbox.client import WorkerSandbox
@@ -117,6 +120,67 @@ class WorkspaceToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([event.seq for event in trace], list(range(1, len(trace) + 1)))
         self.assertEqual(sum(event.type == "artifact.created" for event in trace), 2)
         self.assertEqual(trace[-1].type, "run.completed")
+
+    async def test_agent_finishes_only_after_submitting_the_current_file(self):
+        output = self.directory / "artifacts"
+        registry, names = workspace_tools(ArtifactExporter(output))
+        model = AsyncMock()
+        model.next_turn.side_effect = [
+            ModelTurn(Message("assistant", "Premature answer."), "stop"),
+            ModelTurn(Message("assistant", tool_calls=(
+                ToolCall("draft", "write_file", '{"path":"page.txt","content":"draft"}'),
+                ToolCall("submit-draft", "submit_results", '{"paths":["page.txt"]}'),
+                ToolCall("update", "run_command", json.dumps({"argv": [
+                    sys.executable, "-c", "from pathlib import Path; Path('page.txt').write_text('final')",
+                ]})),
+            )), "tool_calls"),
+            ModelTurn(Message("assistant", "The older file was submitted."), "stop"),
+            ModelTurn(Message("assistant", tool_calls=(
+                ToolCall("submit-final", "submit_results", '{"paths":["page.txt"]}'),
+                ToolCall("list", "ls", "{}"),
+            )), "tool_calls", prompt_tokens=25_000),
+            ModelTurn(Message(
+                "assistant", "\n\n".join(f"## {heading}\nThe current page was submitted." for heading in CHECKPOINT_HEADINGS),
+            ), "stop"),
+            ModelTurn(Message("assistant", "Final file submitted."), "stop"),
+        ]
+        trace = []
+
+        result = await run_agent(
+            AgentSpec(
+                "fixture/model", tool_names=names, max_model_turns=5,
+                context_policy=replace(DEFAULT_CONTEXT_POLICY, keep_recent_turns=0),
+            ),
+            "Deliver the current page.",
+            model=model, tools=registry, sandbox_factory=self.worker, events=RunEvents(trace.append),
+        )
+
+        requests = model.next_turn.call_args_list
+        self.assertIn("Call submit_results to submit the final files", requests[1].kwargs["messages"][-1].content)
+        self.assertIn("changed or are missing in the workspace: page.txt", requests[3].kwargs["messages"][-1].content)
+        self.assertEqual(result.text, "Final file submitted.")
+        artifact, = result.artifacts
+        self.assertEqual((self.directory / artifact.path).read_text(encoding="utf-8"), "final")
+        self.assertEqual([event.type for event in trace].count("artifact.created"), 2)
+        self.assertEqual([event.type for event in trace].count("run.submission_required"), 2)
+        self.assertEqual([event.type for event in trace].count("context.compacted"), 1)
+        self.assertEqual(self.worker.closed, 1)
+
+    async def test_failed_submit_does_not_complete_the_run(self):
+        registry, names = workspace_tools(ArtifactExporter(self.directory / "artifacts"))
+        model = AsyncMock()
+        model.next_turn.side_effect = [
+            ModelTurn(Message("assistant", tool_calls=(
+                ToolCall("missing", "submit_results", '{"paths":["missing.txt"]}'),
+            )), "tool_calls"),
+            ModelTurn(Message("assistant", "Submitted."), "stop"),
+        ]
+        with self.assertRaisesRegex(AgentRunError, "Call submit_results"):
+            await run_agent(
+                AgentSpec("fixture/model", tool_names=names, max_model_turns=2), "Deliver the file.",
+                model=model, tools=registry, sandbox_factory=self.worker,
+            )
+        self.assertEqual(self.worker.closed, 1)
 
     async def test_file_calls_preserve_binary_data_and_block_workspace_escape(self):
         private = self.directory / "outside.txt"

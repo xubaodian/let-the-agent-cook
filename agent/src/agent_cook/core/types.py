@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from math import isfinite
 
+from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY, ContextPolicy
 from agent_cook.protocol.artifacts import ArtifactRef
 
 
@@ -11,6 +12,8 @@ class AgentSpec:
     tool_names: tuple[str, ...] = ()
     max_model_turns: int = 8
     timeout_seconds: float = 120.0
+    context_policy: ContextPolicy = DEFAULT_CONTEXT_POLICY
+    require_submission: bool | None = None
 
     def __post_init__(self) -> None:
         if not self.model.strip():

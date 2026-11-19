@@ -57,6 +57,7 @@ class SkillTest(unittest.TestCase):
                     ("read_file", {"path": "example/SKILL.md", "start_line": 6}),
                     ("copy_file", {"source": "example/references/note.md", "destination": "copied.md"}),
                     ("run_command", {"argv": [sys.executable, "example/scripts/show.py"]}),
+                    ("submit_results", {"paths": ["copied.md"]}),
                 )]
                 return response(calls=calls, finish_reason="tool_calls")
             results.extend(json.loads(message["content"]) for message in request["messages"] if message["role"] == "tool")
@@ -100,6 +101,7 @@ class SkillTest(unittest.TestCase):
         self.assertEqual((workspace / "copied.md").read_text(encoding="utf-8"), "REFERENCE_BODY\n")
         self.assertEqual(results[3]["exit_code"], 0)
         self.assertEqual(results[3]["stdout"], "REFERENCE_BODY\n")
+        self.assertEqual(len(results[4]["artifacts"]), 1)
         self.assertEqual(worker.closed, 1)
 
     def test_skill_transfer_respects_package_boundaries_and_input_limits(self):

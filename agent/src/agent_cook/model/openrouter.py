@@ -57,6 +57,7 @@ class OpenRouterModel:
         reasoning_details = getattr(raw_message, "reasoning_details", None)
         if reasoning_details is not None:
             provider_data["reasoning_details"] = reasoning_details
+        prompt_tokens = getattr(getattr(response, "usage", None), "prompt_tokens", None)
 
         return ModelTurn(
             message=Message(
@@ -66,6 +67,7 @@ class OpenRouterModel:
                 provider_data=provider_data,
             ),
             finish_reason=choice.finish_reason,
+            prompt_tokens=prompt_tokens if type(prompt_tokens) is int and prompt_tokens > 0 else None,
         )
 
 

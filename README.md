@@ -20,6 +20,14 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 
 用 `--request run.json` 指定本次任务的插件、Skill 挂载名单和 MCP 工具，也可以直接传 `--plugin`、`--skill` 和 `--mcp-tool`。插件可以声明子 Agent、工具 Hook 和 MCP 服务。[Plugin 和任务扩展](docs/plugins.md)
 
+## 执行与上下文
+
+公共执行提示词指导 Agent 按用户目标完成脚本、文件和工具操作，按需读取 Skill，验证并交付结果。工作区 Run 以主 Agent 的 `submit_results` 回执交付文件。Runtime 会核对已提交文件的内容，文件变更后需要提交当前版本才可完成。[公共执行提示词](agent/src/agent_cook/context/execution_prompt.md)
+
+上下文默认按 32,768 tokens 的窗口计算。用 `--context-window` 填入实际模型窗口，或在 Python 入口传入 `AgentSpec.context_policy`。预扣输出及误差余量后，估算输入达到预算的 80% 时，Runtime 会在完整工具轮次之间尝试压缩。首次请求和压缩后重估整份输入，其余轮次以上一次模型返回的 `usage.prompt_tokens` 加新增消息的估算量为准。
+
+压缩把已完成的旧轮次写成六段 Markdown checkpoint，继续使用同一工作区。模型保留任务原文和最近的完整调用与回执。单个轮次超出输入预算时也可压缩。成功的 checkpoint 及压缩前后的输入估算记录在 `context.compacted` 事件中。[上下文默认配置](agent/src/agent_cook/context/policy.py)
+
 ## Agent 包的目录
 
 `agent/pyproject.toml` 定义依赖和 CLI。下面的路径相对于 `agent/src/agent_cook/`。
@@ -28,12 +36,12 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 |---|---|
 | `cli.py` | 读取配置，装配 OpenRouter 客户端和本地记录输出。 |
 | `core/` | `run.py` 管 Run 的预算、结束状态和任务资源。`loop.py` 推进模型和工具轮次。 |
-| `context/` | `builder.py` 从指令和会话历史组装本轮模型输入。 |
+| `context/` | 管理执行提示词、输入预算、上下文组装和 checkpoint 压缩。 |
 | `model/` | `client.py` 定义模型接口。`openrouter.py` 负责 Chat Completions 的消息和工具调用格式。 |
 | `tools/` | `spec.py` 和 `registry.py` 管工具契约、授权和分派。`workspace.py` 注册工作区工具，`images.py` 接入生图，`artifacts.py` 导出交付文件。 |
 | `extensions/` | 加载插件清单、Skill 包、子 Agent 定义、工具 Hook 和 MCP 配置。 |
 | `sandbox/` | `interface.py` 定义任务环境接口。`docker.py` 和 `e2b.py` 管各自的生命周期和传输。`worker/` 在沙箱内执行共用操作。 |
-| `state/` | 保存单次 Run 中原始消息及其工具调用关联。 |
+| `state/` | 保存单次 Run 的原始消息、工具调用关联和当前 checkpoint。 |
 | `protocol/` | 定义任务入口、RunEvent、ArtifactRef 和 UiAttachment，供宿主接入和回放读取。 |
 | `events/` | 为执行事件编号并写入 JSONL。 |
 
@@ -41,7 +49,6 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 
 ## 扩展接入点
 
-- **上下文压缩**放进 `context/`，在完整工具轮次结束后生成检查点。会话历史由 `state/` 管理。
 - **Skill、Plugin 和 MCP**集中到 `extensions/`。任务请求选定 Skill，Plugin 装配声明，MCP 把外部工具注册到同一个工具注册表。
 - **新的沙箱后端**实现 `sandbox/interface.py`，通过共用的工作区执行模块提供现有工具行为。仓库根目录的 `sandbox/` 放运行镜像。
 - **子 Agent**由 `core/` 复用模型循环同步执行。父 Run 分配工作区、工具和预算，并收回子任务的产物。

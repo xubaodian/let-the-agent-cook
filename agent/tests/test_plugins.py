@@ -87,7 +87,7 @@ class PluginTest(unittest.TestCase):
         async def next_turn(**request):
             messages = request["messages"]
             last = messages[-1]
-            if messages[0]["content"] == "REVIEWER_INSTRUCTIONS":
+            if messages[0]["content"].endswith("\n\nREVIEWER_INSTRUCTIONS"):
                 self.assertEqual([item["function"]["name"] for item in request["tools"]], ["read_file"])
                 if last["role"] == "user":
                     self.assertEqual(len(messages), 2)
