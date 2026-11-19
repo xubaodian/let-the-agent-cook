@@ -10,6 +10,7 @@ from agent_cook.tools.spec import ToolDefinition
 class ModelTurn:
     message: Message
     finish_reason: str
+    prompt_tokens: int | None = None
 
 
 class ModelClient(Protocol):

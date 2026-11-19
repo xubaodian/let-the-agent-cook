@@ -4,7 +4,7 @@ from typing import Any
 
 from agent_cook.protocol.ui import UiAttachment
 from agent_cook.sandbox.limits import MAX_COMMAND_SECONDS, MAX_FIND_RESULTS, MAX_WRITE_BYTES
-from agent_cook.tools.artifacts import ArtifactExporter
+from agent_cook.tools.artifacts import SUBMIT_RESULTS, ArtifactExporter
 from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.spec import ToolContext, ToolDefinition, ToolError, ToolHandler, ToolResult
 
@@ -114,7 +114,7 @@ _BROWSER = _definition(
 )
 
 _SUBMIT = _definition(
-    "submit_results", "Export selected result files from the workspace so the rest can expire with it.",
+    SUBMIT_RESULTS, "Export selected result files from the workspace so the rest can expire with it.",
     {"paths": {"type": "array", "minItems": 1, "maxItems": 12, "uniqueItems": True, "items": _PATH}},
     ("paths",),
 )
@@ -164,11 +164,13 @@ def workspace_tools(exporter: ArtifactExporter) -> tuple[ToolRegistry, tuple[str
 
     async def submit(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         sandbox = await context.get_sandbox()
-        artifacts = await exporter.export(sandbox, arguments["paths"])
+        files = await exporter.submit(sandbox, arguments["paths"])
+        artifacts = tuple(file.artifact for file in files)
         return ToolResult(
             json.dumps({"artifacts": [asdict(artifact) for artifact in artifacts]}, ensure_ascii=False),
             artifacts=artifacts,
             ui=UiAttachment("artifacts", {"artifact_ids": [artifact.id for artifact in artifacts]}),
+            submitted_files=files,
         )
 
     registry.register(_SUBMIT, submit)

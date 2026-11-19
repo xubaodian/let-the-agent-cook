@@ -15,11 +15,14 @@ from agent_cook.state.session import Message
 from agent_cook.tools.spec import ToolDefinition
 
 
-def response(content=None, *, calls=None, reasoning_details=None, finish_reason="stop"):
+def response(content=None, *, calls=None, reasoning_details=None, finish_reason="stop", prompt_tokens=None):
     message = SimpleNamespace(
         content=content, refusal=None, tool_calls=calls, reasoning_details=reasoning_details
     )
-    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=finish_reason)])
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=message, finish_reason=finish_reason)],
+        usage=SimpleNamespace(prompt_tokens=prompt_tokens) if prompt_tokens is not None else None,
+    )
 
 
 def sdk_client(create):
@@ -33,7 +36,7 @@ class OpenRouterTest(unittest.IsolatedAsyncioTestCase):
         )
         details = [{"type": "reasoning.encrypted", "data": "fixture"}]
         create = AsyncMock(side_effect=[
-            response(calls=[call], reasoning_details=details, finish_reason="tool_calls"),
+            response(calls=[call], reasoning_details=details, finish_reason="tool_calls", prompt_tokens=123),
             response("Done."),
         ])
         adapter = OpenRouterModel(sdk_client(create))
@@ -42,11 +45,13 @@ class OpenRouterTest(unittest.IsolatedAsyncioTestCase):
 
         first = await adapter.next_turn(model="fixture/model", messages=(user,), tools=tools)
         output = Message("tool", "value", tool_call_id=first.message.tool_calls[0].id)
-        await adapter.next_turn(
+        second = await adapter.next_turn(
             model="fixture/model", messages=(user, first.message, output), tools=tools
         )
 
         request = create.call_args.kwargs
+        self.assertEqual(first.prompt_tokens, 123)
+        self.assertIsNone(second.prompt_tokens)
         self.assertEqual(request["tools"][0]["function"]["parameters"], {"type": "object"})
         self.assertTrue(request["extra_body"]["provider"]["require_parameters"])
         self.assertEqual(request["messages"][1]["reasoning_details"], details)

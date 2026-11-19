@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Sequence
 from typing import Any
 
+from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
 from agent_cook.core.loop import run_loop
 from agent_cook.core.types import AgentRunError, AgentSpec, SubagentSpec
 from agent_cook.events.journal import RunEvents
@@ -43,10 +44,13 @@ def register_delegate(
             name for name in profile.tool_names
             if name in context.allowed_tools and name != DELEGATE_TOOL
         )
+        model_id = profile.model or parent.model
         spec = AgentSpec(
-            model=profile.model or parent.model, instructions=profile.instructions, tool_names=names,
+            model=model_id, instructions=profile.instructions, tool_names=names,
             max_model_turns=min(parent.max_model_turns, profile.max_model_turns),
             timeout_seconds=min(parent.timeout_seconds, profile.timeout_seconds),
+            context_policy=parent.context_policy if model_id == parent.model else DEFAULT_CONTEXT_POLICY,
+            require_submission=False,
         )
         events = (context.events or RunEvents(run_id=context.run_id)).child()
         child_context = ToolContext(events.run_id, frozenset(names), context.get_sandbox, events, context.hook)

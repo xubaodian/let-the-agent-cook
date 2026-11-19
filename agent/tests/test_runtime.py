@@ -3,6 +3,7 @@ import unittest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
+from agent_cook.context.prompts import EXECUTION_PROMPT
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec, SubagentSpec
 from agent_cook.events.journal import RunEvents
@@ -71,7 +72,7 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.next_turn.call_args.kwargs["tools"], ())
         self.assertEqual(
             model.next_turn.call_args.kwargs["messages"],
-            (Message("system", "Reply briefly."), Message("user", "Hello")),
+            (Message("system", f"{EXECUTION_PROMPT}\n\nReply briefly."), Message("user", "Hello")),
         )
         self.assertEqual([event.seq for event in records], [1, 2, 3, 4])
         self.assertEqual([event.type for event in records], [
@@ -216,7 +217,7 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
         records = []
 
         async def next_turn(messages, **_):
-            if messages[0].role == "system":
+            if messages[1].content == "Check this":
                 await asyncio.Event().wait()
             if messages[-1].role == "user":
                 return tool_turn(ToolCall(

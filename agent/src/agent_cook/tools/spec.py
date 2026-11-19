@@ -22,11 +22,19 @@ class ToolCall:
 
 
 @dataclass(frozen=True, slots=True)
+class SubmittedFile:
+    workspace_path: str
+    sha256: str
+    artifact: ArtifactRef
+
+
+@dataclass(frozen=True, slots=True)
 class ToolResult:
     model_content: str
     is_error: bool = False
     artifacts: tuple[ArtifactRef, ...] = ()
     ui: UiAttachment | None = None
+    submitted_files: tuple[SubmittedFile, ...] = ()
 
 
 ToolHook = Callable[
