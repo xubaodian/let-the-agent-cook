@@ -44,6 +44,10 @@ class PluginTest(unittest.TestCase):
         self._write("skills/brief/SKILL.md", "---\nname: brief\ndescription: Write a brief.\n---\nBRIEF_BODY\n")
         self._write("skills/unused/SKILL.md", "---\nname: unused\ndescription: Optional.\n---\n")
         self._write("assets/report.txt", "Ready template")
+        self._write("mcp.json", json.dumps({
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+            "mcpServers": {"unused": {"type": "stdio", "command": "./unavailable-server"}},
+        }))
         self._write(
             "agents/data-reviewer.md",
             "---\nname: data-reviewer\ndescription: Check report figures.\n"
@@ -72,7 +76,8 @@ class PluginTest(unittest.TestCase):
             "schema_version": 1,
             "task": "Prepare a report.",
             "plugins": ["plugins/reporting"],
-            "skills": {"mount": ["brief"]},
+            "skills": ["brief"],
+            "mcp_tools": [],
         }), encoding="utf-8")
         workspace = self.root / "workspace"
         workspace.mkdir()
@@ -138,7 +143,7 @@ class PluginTest(unittest.TestCase):
         self.assertEqual(hook_result["tool_call_id"], "submit")
         self.assertFalse(hook_result["result"]["is_error"])
         trace = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual(trace[0]["data"], {"plugins": ["reporting"], "skills": ["brief"]})
+        self.assertEqual(trace[0]["data"], {"plugins": ["reporting"], "skills": ["brief"], "mcp_tools": []})
         self.assertEqual([event["seq"] for event in trace], list(range(1, len(trace) + 1)))
         child = next(event for event in trace if event["data"].get("agent") == "data-reviewer")
         self.assertEqual(child["parent_run_id"], trace[0]["run_id"])
@@ -156,8 +161,20 @@ class PluginTest(unittest.TestCase):
         self._write("skills/brief/SKILL.md", "---\nname: brief\ndescription: Write a brief.\n---\n")
         path = self.plugin / "skills"
         default = RunRequest.parse({"task": "Test."})
-        empty = RunRequest.parse({"task": "Test.", "skills": {"mount": []}})
+        empty = RunRequest.parse({"task": "Test.", "skills": [], "mcp_tools": []})
+        canonical = RunRequest.parse({
+            "task": "Test.", "skill_directories": ["skills"], "skills": ["brief"],
+            "mcp_tools": ["project-data/lookup"],
+        }, base=self.plugin)
+        legacy = RunRequest.parse({
+            "task": "Test.", "skills": {"directories": ["skills"], "mount": ["brief"]},
+        }, base=self.plugin)
         self.assertEqual(SkillCatalog([path], default.mounted_skills).names, ("brief",))
         self.assertEqual(SkillCatalog([path], empty.mounted_skills).workspace_files({}), {})
+        self.assertIsNone(default.mcp_tools)
+        self.assertEqual(empty.mcp_tools, ())
+        self.assertEqual(canonical.mcp_tools, ("project-data/lookup",))
+        self.assertEqual(canonical.skill_directories, legacy.skill_directories)
+        self.assertEqual(canonical.mounted_skills, legacy.mounted_skills)
         with self.assertRaisesRegex(ValueError, "Unknown mounted skills: absent"):
             SkillCatalog([path], ("absent",))

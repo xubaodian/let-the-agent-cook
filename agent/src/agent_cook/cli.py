@@ -64,6 +64,7 @@ async def _run(
     image_model: str | None = None,
     skills: "SkillCatalog | None" = None,
     plugins: "tuple[Plugin, ...]" = (),
+    mcp_tools: tuple[str, ...] | None = None,
 ) -> RunResult:
     from openai import AsyncOpenAI
 
@@ -81,7 +82,8 @@ async def _run(
                     image_tool = register_image_tool(registry, OpenRouterImageGenerator(client, image_model))
                     tool_names = (*tool_names, image_tool)
             servers = tuple(server for plugin in plugins for server in plugin.mcp_servers)
-            tool_names += await register_mcp_tools(resources, registry, servers)
+            mcp_names = await register_mcp_tools(resources, registry, servers, selected=mcp_tools)
+            tool_names += mcp_names
             spec = replace(
                 spec, tool_names=tool_names,
                 instructions=skills.instructions(spec.instructions) if skills is not None else spec.instructions,
@@ -92,10 +94,11 @@ async def _run(
                 partial(skills.workspace_files, inputs, extra_trees=trees)
                 if skills is not None and (skills.names or trees) else inputs
             )
-            if plugins or skills is not None:
+            if plugins or skills is not None or mcp_tools is not None:
                 events.emit(
                     "extensions.loaded", plugins=[plugin.name for plugin in plugins],
                     skills=list(skills.names) if skills is not None else [],
+                    mcp_tools=list(mcp_names),
                 )
             return await run_agent(
                 spec,
@@ -128,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--skill", action="append", help="Mount a named Skill. Repeat to select several.")
     parser.add_argument("--plugin", action="append", type=Path, default=[], help="Enable a local plugin directory")
+    parser.add_argument("--mcp-tool", action="append", help="Enable an MCP tool by server/tool. Repeat to select several.")
     parser.add_argument("--max-turns", type=int, default=8, help="Maximum number of model turns")
     parser.add_argument("--timeout", type=float, default=120, help="Run time limit in seconds")
     args = parser.parse_args(argv)
@@ -137,8 +141,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Set OPENROUTER_API_KEY before running the agent.")
     if not args.model or not args.model.strip():
         parser.error("Set OPENROUTER_MODEL or pass --model with an OpenRouter model ID.")
-    if args.request is not None and (args.task is not None or args.plugin or args.skills_dir or args.skill):
-        parser.error("Specify the task, plugins, and skills in the JSON file when using --request.")
+    if args.request is not None and (
+        args.task is not None or args.plugin or args.skills_dir or args.skill or args.mcp_tool
+    ):
+        parser.error("Specify the task and extension selections in the JSON file when using --request.")
     if args.request is None and (args.task is None or not args.task.strip()):
         parser.error("Provide a task with at least one non-whitespace character, or pass --request.")
 
@@ -153,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         request = RunRequest.from_file(args.request) if args.request is not None else RunRequest(
             task=args.task, plugins=tuple(args.plugin), skill_directories=tuple(args.skills_dir),
             mounted_skills=tuple(args.skill) if args.skill is not None else None,
+            mcp_tools=tuple(args.mcp_tool) if args.mcp_tool is not None else None,
         )
         spec = AgentSpec(
             model=args.model.strip(), max_model_turns=args.max_turns, timeout_seconds=args.timeout
@@ -196,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
         result = asyncio.run(_run(
             spec, request.task, api_key, trace_path, run_id, factory, inputs,
             image_model=image_model.strip() or None, skills=skills, plugins=plugins,
+            mcp_tools=request.mcp_tools,
         ))
     except KeyboardInterrupt:
         print("Run cancelled.", file=sys.stderr)

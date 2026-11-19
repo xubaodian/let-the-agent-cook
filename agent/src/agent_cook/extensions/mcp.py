@@ -68,10 +68,8 @@ def read_servers(root: Path, document: dict) -> tuple[McpServer, ...]:
             endpoint = urlsplit(config["url"])
             if endpoint.scheme not in ("http", "https") or not endpoint.hostname or endpoint.username is not None:
                 raise ValueError(f"MCP server '{name}' requires an HTTP(S) URL without embedded credentials.")
-        else:
-            _stdio_paths(root, config)
-            if {"PLUGIN_ROOT", "PLUGIN_DATA"} & config.get("env", {}).keys():
-                raise ValueError(f"MCP server '{name}' cannot set reserved plugin environment variables.")
+        elif {"PLUGIN_ROOT", "PLUGIN_DATA"} & config.get("env", {}).keys():
+            raise ValueError(f"MCP server '{name}' cannot set reserved plugin environment variables.")
         result.append(McpServer(name, root, config))
     return tuple(result)
 
@@ -111,10 +109,29 @@ def _tool_name(server: str, tool: str) -> str:
     return alias
 
 
+def _tool_selections(servers: Sequence[McpServer], selected: Sequence[str]) -> dict[str, set[str]]:
+    names = {server.name for server in servers}
+    selections: dict[str, set[str]] = {}
+    for selector in selected:
+        if "/" not in selector or selector.startswith("/") or selector.endswith("/"):
+            raise SandboxError(f"Use server/tool for MCP tool selection, got '{selector}'.")
+        matches = [name for name in names if selector.startswith(f"{name}/")]
+        if not matches:
+            raise SandboxError(f"MCP tool '{selector}' refers to an unknown server.")
+        if len(matches) > 1:
+            raise SandboxError(f"MCP tool '{selector}' matches more than one server name.")
+        server, = matches
+        selections.setdefault(server, set()).add(selector[len(server) + 1:])
+    return selections
+
+
 async def register_mcp_tools(
     stack: AsyncExitStack, registry: ToolRegistry, servers: Sequence[McpServer],
+    *, selected: Sequence[str] | None = None,
 ) -> tuple[str, ...]:
-    if not servers:
+    selections = _tool_selections(servers, selected) if selected is not None else None
+    active_servers = [server for server in servers if selections is None or server.name in selections]
+    if not active_servers:
         return ()
 
     from httpx import AsyncClient
@@ -123,7 +140,7 @@ async def register_mcp_tools(
     from mcp.client.streamable_http import streamable_http_client
 
     names = []
-    for server in servers:
+    for server in active_servers:
         try:
             config = server.config
             if config["type"] == "stdio":
@@ -141,37 +158,49 @@ async def register_mcp_tools(
             session = await stack.enter_async_context(ClientSession(
                 streams[0], streams[1], read_timeout_seconds=timedelta(seconds=_TIMEOUT_SECONDS),
             ))
+            wanted = selections[server.name] if selections is not None else None
             async with asyncio.timeout(_TIMEOUT_SECONDS):
-                names.extend(await _discover_tools(session, registry, server.name))
+                names.extend(await _discover_tools(session, registry, server.name, wanted))
+        except SandboxError:
+            raise
         except Exception as error:
             raise SandboxError(f"Could not load MCP tools from '{server.name}' ({type(error).__name__}).") from error
     return tuple(names)
 
 
-async def _discover_tools(session: Any, registry: ToolRegistry, server: str) -> list[str]:
+async def _discover_tools(
+    session: Any, registry: ToolRegistry, server: str, wanted: set[str] | None,
+) -> list[str]:
     from mcp.types import PaginatedRequestParams
 
     initialized = await session.initialize()
-    if initialized.capabilities.tools is None:
-        return []
+    tools = []
+    if initialized.capabilities.tools is not None:
+        cursor = None
+        seen_cursors = set()
+        while True:
+            page = await session.list_tools(params=PaginatedRequestParams(cursor=cursor))
+            tools.extend(tool for tool in page.tools if wanted is None or tool.name in wanted)
+            cursor = page.nextCursor
+            if cursor is None:
+                break
+            if cursor in seen_cursors:
+                raise ValueError("The MCP server repeated a tool discovery cursor.")
+            seen_cursors.add(cursor)
+
+    if wanted is not None and (missing := wanted - {tool.name for tool in tools}):
+        refs = ", ".join(f"{server}/{name}" for name in sorted(missing))
+        raise SandboxError(f"MCP tools not found: {refs}.")
+
     names = []
-    cursor = None
-    seen_cursors = set()
-    while True:
-        page = await session.list_tools(params=PaginatedRequestParams(cursor=cursor))
-        for tool in page.tools:
-            name = _tool_name(server, tool.name)
-            registry.register(
-                ToolDefinition(name, tool.description or tool.name, tool.inputSchema),
-                _handler(session, tool.name),
-            )
-            names.append(name)
-        cursor = page.nextCursor
-        if cursor is None:
-            return names
-        if cursor in seen_cursors:
-            raise ValueError("The MCP server repeated a tool discovery cursor.")
-        seen_cursors.add(cursor)
+    for tool in tools:
+        name = _tool_name(server, tool.name)
+        registry.register(
+            ToolDefinition(name, tool.description or tool.name, tool.inputSchema),
+            _handler(session, tool.name),
+        )
+        names.append(name)
+    return names
 
 
 def _handler(session: Any, name: str) -> ToolHandler:

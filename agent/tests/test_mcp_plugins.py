@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
 
 from agent_cook.extensions.mcp import MCP_SCHEMA, read_servers, register_mcp_tools
+from agent_cook.sandbox.interface import SandboxError
 from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.spec import ToolCall, ToolContext
 
@@ -23,12 +24,15 @@ class McpPluginTest(unittest.IsolatedAsyncioTestCase):
             (root / "plugin.json").write_text(json.dumps({"$schema": PLUGIN_SCHEMA, "name": "test-mcp"}))
             (root / "mcp.json").write_text(json.dumps({
                 "$schema": MCP_SCHEMA,
-                "mcpServers": {"test": {
-                    "type": "stdio",
-                    "command": Path(sys.executable).name,
-                    "args": ["server.py"],
-                    "env": {"PATH": os.pathsep.join((str(Path(sys.executable).parent), os.environ.get("PATH", "")))},
-                }},
+                "mcpServers": {
+                    "test": {
+                        "type": "stdio",
+                        "command": Path(sys.executable).name,
+                        "args": ["server.py"],
+                        "env": {"PATH": os.pathsep.join((str(Path(sys.executable).parent), os.environ.get("PATH", "")))},
+                    },
+                    "unused": {"type": "stdio", "command": "./unavailable-server"},
+                },
             }))
             (root / "server.py").write_text(
                 "from mcp.server.fastmcp import FastMCP\n"
@@ -36,14 +40,21 @@ class McpPluginTest(unittest.IsolatedAsyncioTestCase):
                 "@server.tool()\n"
                 "def summarize(value: int) -> dict[str, int]:\n"
                 "    return {'value': value}\n"
+                "@server.tool()\n"
+                "def details() -> str:\n"
+                "    return 'Other tool'\n"
                 "server.run(transport='stdio')\n",
                 encoding="utf-8",
             )
             plugin, = load_plugins((root,))
             registry = ToolRegistry()
             async with AsyncExitStack() as stack:
-                names = await register_mcp_tools(stack, registry, plugin.mcp_servers)
+                names = await register_mcp_tools(
+                    stack, registry, plugin.mcp_servers, selected=("test/summarize",),
+                )
                 self.assertEqual(names, ("mcp__test__summarize",))
+                with self.assertRaisesRegex(ValueError, "no registered handler"):
+                    registry.definitions(("mcp__test__details",))
                 result = await registry.invoke(
                     ToolCall("mcp-call", names[0], '{"value":17}'),
                     ToolContext("test", frozenset(names), AsyncMock()),
@@ -87,5 +98,8 @@ class McpPluginTest(unittest.IsolatedAsyncioTestCase):
                     ToolCall("mcp-call", names[0], "{}"),
                     ToolContext("test", frozenset(names), AsyncMock()),
                 )
+            async with AsyncExitStack() as stack:
+                with self.assertRaisesRegex(SandboxError, "MCP tools not found: test/missing"):
+                    await register_mcp_tools(stack, ToolRegistry(), servers, selected=("test/missing",))
         self.assertFalse(result.is_error)
         self.assertEqual(result.model_content, "found it")

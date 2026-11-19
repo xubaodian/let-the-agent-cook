@@ -1,16 +1,14 @@
 # Plugin 和任务扩展
 
-任务请求决定本次运行启用哪些 Plugin，以及哪些 Skill 进入模型目录和沙箱工作区。`RunRequest.parse()` 也可以用于接受 JSON 对象的宿主入口。
+任务请求决定本次运行启用哪些 Plugin、挂载哪些 Skill，以及向模型开放哪些 MCP 工具。`RunRequest.parse()` 也可以用于接受 JSON 对象的宿主入口。
 
 ```json
 {
   "schema_version": 1,
-  "task": "生成项目简报，复核关键数字后提交",
+  "task": "用项目数据生成简报，复核关键数字后提交",
   "plugins": ["./plugins/reporting"],
-  "skills": {
-    "directories": ["./my-skills"],
-    "mount": ["brief"]
-  }
+  "skills": ["brief"],
+  "mcp_tools": ["project-data/lookup"]
 }
 ```
 
@@ -20,13 +18,14 @@
 uv run --project agent agent-cook --sandbox docker --request run.json
 ```
 
-| `skills.mount` | 本次运行的 Skill |
-|---|---|
-| 省略 | 启用从 `skills.directories` 和已启用 Plugin 发现的全部 Skill |
-| 空数组 `[]` | 本次任务挂载零个 Skill |
-| 名称数组 | 系统提示和工作区都只包含所列 Skill，未知名称会报错 |
+| 字段 | 填写内容 | 作用 |
+|---|---|---|
+| `skills` | Skill 名称，例如 `brief` | 用同一份名单构建模型目录并挂载到工作区 |
+| `mcp_tools` | `server/tool`，例如 `project-data/lookup` | 只连接名单涉及的服务器，向模型注册所列工具 |
 
-命令行也可以直接用 `--plugin ./plugins/reporting` 启用目录，用 `--skill brief` 选中 Skill。可重复传这些参数。工作区第一次打开时复制选中的包和插件文件，模型起始上下文只包含 Skill 的名称、描述和入口。运行日志的 `extensions.loaded` 记录本次启用的插件和 Skill 名单。
+两个数组省略时使用对应的全部发现项，`[]` 表示选零个。`mcp_tools` 为 `[]` 时跳过 MCP 服务连接。填写未知的 Skill 或 MCP 工具名称会报错。独立的 Skill 包目录可通过 `skill_directories` 指定，例如 `["./my-skills"]`。
+
+命令行也可以用 `--plugin ./plugins/reporting`、`--skill brief` 和 `--mcp-tool project-data/lookup`，这些参数都可重复。工作区第一次打开时复制选中的包和插件文件，模型起始上下文只包含 Skill 的名称、描述和入口。`extensions.loaded` 记录启用的插件、Skill 和注册到模型的 MCP 工具名，例如 `mcp__project-data__lookup`。
 
 ## 插件目录
 
@@ -102,4 +101,4 @@ Python 脚本在任务沙箱里执行，工作目录是工作区根目录。从 
 }
 ```
 
-把示例 URL 换成实际服务。`stdio` 由宿主启动显式启用的本地服务，支持 `command`、`args`、`env` 和插件内的 `cwd`。运行时在首轮模型调用前发现工具，把文本或结构化结果交回 Agent，并在任务退出时关闭连接。
+把示例 URL 换成实际服务。任务请求中的 `project-data/lookup` 使用 `mcpServers` 下的服务名 `project-data`，以及服务端公布的工具名 `lookup`。`stdio` 由宿主启动选中的本地服务，支持 `command`、`args`、`env` 和插件内的 `cwd`。运行时在首轮模型调用前发现工具，把文本或结构化结果交回 Agent，并在任务退出时关闭连接。

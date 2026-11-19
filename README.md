@@ -18,7 +18,7 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 
 使用沙箱时，可以用 `--skills-dir` 配置本机 Skill。模型先接收名称、描述和工作区入口，可用 `ls` 和 `read_file` 按需浏览和读取。[按需读取 Skill](docs/workspace-tools.md#按需读取-skill)
 
-用 `--request run.json` 指定本次任务的插件和 Skill 挂载名单，也可以直接传 `--plugin` 和 `--skill`。插件可以声明子 Agent、工具 Hook 和 MCP 服务。[Plugin 和任务扩展](docs/plugins.md)
+用 `--request run.json` 指定本次任务的插件、Skill 挂载名单和 MCP 工具，也可以直接传 `--plugin`、`--skill` 和 `--mcp-tool`。插件可以声明子 Agent、工具 Hook 和 MCP 服务。[Plugin 和任务扩展](docs/plugins.md)
 
 ## Agent 包的目录
 
