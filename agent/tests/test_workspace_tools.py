@@ -200,7 +200,10 @@ class WorkspaceCliTest(unittest.TestCase):
             trace = root / "trace.jsonl"
             stdout = io.StringIO()
             stderr = io.StringIO()
-            env = {"OPENROUTER_API_KEY": "test-key", "OPENROUTER_MODEL": "fixture/model"}
+            env = {
+                "OPENROUTER_API_KEY": "test-key", "OPENROUTER_MODEL": "fixture/model",
+                "OPENROUTER_IMAGE_MODEL": "",
+            }
             with (
                 patch.dict(os.environ, env),
                 patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}),

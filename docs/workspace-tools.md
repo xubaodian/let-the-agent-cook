@@ -26,11 +26,31 @@ flowchart TD
 | `copy_file` | 复制工作区里的单个文件，支持二进制，默认保留已有目标。 |
 | `run_command` | 用 `argv`、`cwd` 和 `timeout_seconds` 运行 Python、Node.js 或其他镜像内程序。返回退出码、stdout、stderr、超时与截断状态。 |
 | `playwright` | 预览工作区 HTML 或沙箱内的环回 URL。可用 `server_argv` 启动临时服务，执行点击、填值、按键、文本断言并保存 PNG。 |
+| `generate_image` | 用配置的 OpenRouter 图片模型生成一张图，返回工作区路径、格式、字节数和模型 ID。 |
 | `submit_results` | 批量导出指定文件，返回 `ArtifactRef` 并记录产物和 UI 附件。随后 Agent 可以继续总结结果。 |
 
 `run_command` 统一了命令执行入口。需要 shell 时，可以在 `argv` 中显式选择 `bash`。工作目录和执行超时由 worker 校验，命令超时会结束该进程组并返回已捕获的输出。[OpenAI Shell 工具指南](https://developers.openai.com/api/docs/guides/tools-shell)
 
 文件工具以工作区相对路径为边界，处理普通文件和目录。`playwright` 适合验证 Agent 生成的本地网页和启动的测试服务器，截图写回工作区。用 `submit_results` 选出交付文件，批次在全部读取成功后才出现在产物目录中。
+
+## 生图
+
+使用沙箱时，设置 `OPENROUTER_IMAGE_MODEL` 或传 `--image-model` 即可启用 `generate_image`。选择支持 OpenRouter Image API 的模型。对话和生图复用 `OPENROUTER_API_KEY`，由主进程分别调用对应接口。[OpenRouter Image API](https://openrouter.ai/blog/tutorials/image-generation/)
+
+| 工具参数 | 用法 |
+|---|---|
+| `prompt` | 必填。描述画面、风格和构图。 |
+| `aspect_ratio` | 可选。指定宽高比，例如 `16:9`、`9:16` 或 `1:1`。 |
+| `resolution` | 可选。指定模型支持的分辨率档位，例如 `1K` 或 `2K`。 |
+| `output_dir` | 可选。工作区相对目录，默认为 `generated-images`。文件名由工具生成。 |
+
+比例和分辨率沿用所选模型的默认值，除非调用时显式指定。工具用实际图片格式确定扩展名，支持 PNG、JPEG 和 WebP，单张图片最多 16 MiB。可以用返回的 `path` 将图片放进网页，也可以用 `submit_results` 导出。
+
+```bash
+export OPENROUTER_IMAGE_MODEL='bytedance-seed/seedream-4.5'
+uv run --project agent agent-cook --sandbox docker --timeout 240 \
+  '生成一张 16:9 的深蓝色城市夜景，用 submit_results 交付图片。'
+```
 
 ## 本地 Docker
 

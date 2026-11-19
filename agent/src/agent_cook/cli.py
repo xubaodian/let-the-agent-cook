@@ -11,12 +11,14 @@ from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.events.journal import RunEvents, write_jsonl
 from agent_cook.model.openrouter import OPENROUTER_BASE_URL, OpenRouterModel
+from agent_cook.model.openrouter_images import OpenRouterImageGenerator
 from agent_cook.sandbox.docker import DEFAULT_DOCKER_IMAGE, DockerSandboxFactory
 from agent_cook.sandbox.e2b import E2BSandboxFactory
 from agent_cook.sandbox.interface import SandboxError, SandboxFactory
 from agent_cook.sandbox.limits import MAX_FILE_BYTES, MAX_TRANSFER_BYTES
 from agent_cook.sandbox.paths import workspace_path
 from agent_cook.tools.artifacts import ArtifactExporter
+from agent_cook.tools.images import register_image_tool
 from agent_cook.tools.workspace import workspace_tools
 
 
@@ -47,19 +49,23 @@ async def _run(
     run_id: str,
     factory: SandboxFactory | None,
     inputs: dict[str, bytes],
+    *,
+    image_model: str | None = None,
 ) -> RunResult:
     from openai import AsyncOpenAI
-
-    registry = None
-    if factory is not None:
-        exporter = ArtifactExporter(trace_path.parent / f"{run_id}-artifacts")
-        registry, tool_names = workspace_tools(exporter)
-        spec = replace(spec, tool_names=tool_names)
 
     trace_path.parent.mkdir(parents=True, exist_ok=True)
     with trace_path.open("x", encoding="utf-8") as trace:
         events = RunEvents(lambda event: write_jsonl(trace, event), run_id=run_id)
         async with AsyncOpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL) as client:
+            registry = None
+            if factory is not None:
+                exporter = ArtifactExporter(trace_path.parent / f"{run_id}-artifacts")
+                registry, tool_names = workspace_tools(exporter)
+                if image_model is not None:
+                    image_tool = register_image_tool(registry, OpenRouterImageGenerator(client, image_model))
+                    tool_names = (*tool_names, image_tool)
+                spec = replace(spec, tool_names=tool_names)
             return await run_agent(
                 spec,
                 task,
@@ -77,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--model", default=os.environ.get("OPENROUTER_MODEL"), help="OpenRouter model ID"
     )
+    parser.add_argument("--image-model", help="OpenRouter Image API model ID (or set OPENROUTER_IMAGE_MODEL)")
     parser.add_argument("--trace", type=Path, help="Write the run to a new JSONL file at this path")
     parser.add_argument("--sandbox", choices=("docker", "e2b"), help="Enable task workspace tools")
     parser.add_argument("--docker-image", default=DEFAULT_DOCKER_IMAGE, help="Prebuilt local sandbox image")
@@ -96,6 +103,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if (args.input or args.sandbox_network) and args.sandbox is None:
         parser.error("--input and --sandbox-network require --sandbox.")
+    if args.image_model is not None and args.sandbox is None:
+        parser.error("--image-model requires --sandbox.")
+    image_model = args.image_model if args.image_model is not None else os.environ.get("OPENROUTER_IMAGE_MODEL", "")
     try:
         spec = AgentSpec(
             model=args.model.strip(), max_model_turns=args.max_turns, timeout_seconds=args.timeout
@@ -119,7 +129,10 @@ def main(argv: list[str] | None = None) -> int:
     trace_path = args.trace or Path(".agent-cook/runs") / f"{run_id}.jsonl"
 
     try:
-        result = asyncio.run(_run(spec, args.task, api_key, trace_path, run_id, factory, inputs))
+        result = asyncio.run(_run(
+            spec, args.task, api_key, trace_path, run_id, factory, inputs,
+            image_model=image_model.strip() or None,
+        ))
     except KeyboardInterrupt:
         print("Run cancelled.", file=sys.stderr)
         return 130

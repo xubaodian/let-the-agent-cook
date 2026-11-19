@@ -26,7 +26,7 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 | `core/` | `run.py` 管 Run 的预算、结束状态和任务资源。`loop.py` 推进模型和工具轮次。 |
 | `context/` | `builder.py` 从指令和会话历史组装本轮模型输入。 |
 | `model/` | `client.py` 定义模型接口。`openrouter.py` 负责 Chat Completions 的消息和工具调用格式。 |
-| `tools/` | `spec.py` 和 `registry.py` 管工具契约、授权和分派。`workspace.py` 注册工作区工具，`artifacts.py` 导出交付文件。 |
+| `tools/` | `spec.py` 和 `registry.py` 管工具契约、授权和分派。`workspace.py` 注册工作区工具，`images.py` 接入生图，`artifacts.py` 导出交付文件。 |
 | `sandbox/` | `interface.py` 定义任务环境接口。`docker.py` 和 `e2b.py` 管各自的生命周期和传输。`worker/` 在沙箱内执行共用操作。 |
 | `state/` | 保存单次 Run 中原始消息及其工具调用关联。 |
 | `protocol/` | 定义可序列化的 RunEvent、ArtifactRef 和 UiAttachment，供未来的前端和回放读取。 |
