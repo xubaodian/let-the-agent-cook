@@ -20,7 +20,7 @@ from agent_cook.sandbox.interface import SandboxError
 from agent_cook.sandbox.limits import MAX_COMMAND_OUTPUT, WORKER_MODULE
 from agent_cook.state.session import Message
 from agent_cook.tools.artifacts import ArtifactExporter
-from agent_cook.tools.spec import ToolCall
+from agent_cook.tools.spec import ToolCall, ToolContext
 from agent_cook.tools.workspace import workspace_tools
 from test_openrouter import response, sdk_client
 
@@ -71,7 +71,7 @@ class WorkspaceToolTest(unittest.IsolatedAsyncioTestCase):
         output = self.directory / "artifacts"
         registry, names = workspace_tools(ArtifactExporter(output))
         steps = [
-            ("list_files", {}),
+            ("ls", {}),
             ("read_file", {"path": "input.csv", "start_line": 2, "line_count": 1}),
             ("copy_file", {"source": "input.csv", "destination": "results/copy.csv"}),
             ("search_files", {"glob": "**/*.csv", "query": "JAN"}),
@@ -137,6 +137,33 @@ class WorkspaceToolTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SandboxError):
             await self.sandbox.request("copy_file", {"source": "src.dat", "destination": "dist/src.dat"})
         self.assertEqual(await self.sandbox.get_file("dist/src.dat"), binary)
+
+    async def test_ls_filters_and_pages_workspace_paths(self):
+        for path in ("notes.txt", "src/a.py", "src/sub/b.py", "src/sub/c.py"):
+            await self.sandbox.put_file(path, b"example")
+        registry, names = workspace_tools(ArtifactExporter(self.directory / "artifacts"))
+        context = ToolContext("fixture", frozenset(names), AsyncMock(return_value=self.sandbox))
+
+        async def invoke(tool, **arguments):
+            result = await registry.invoke(ToolCall(tool, tool, json.dumps(arguments)), context)
+            self.assertFalse(result.is_error, result.model_content)
+            return json.loads(result.model_content)
+
+        root = await invoke("ls")
+        self.assertEqual(root["entries"], [
+            {"path": "notes.txt", "kind": "file"}, {"path": "src", "kind": "directory"},
+        ])
+        directories = await invoke("ls", recursive=True, kind="directory")
+        self.assertEqual([entry["path"] for entry in directories["entries"]], ["src", "src/sub"])
+
+        options = {"directory": "src", "recursive": True, "kind": "file", "max_results": 2}
+        first = await invoke("ls", **options)
+        self.assertEqual([entry["path"] for entry in first["entries"]], ["src/a.py", "src/sub/b.py"])
+        self.assertTrue(first["truncated"])
+        second = await invoke("ls", cursor=first["next_cursor"], **options)
+        self.assertEqual(second["entries"], [{"path": "src/sub/c.py", "kind": "file"}])
+        self.assertFalse(second["truncated"])
+        self.assertIsNone(second["next_cursor"])
 
     async def test_result_export_is_atomic_when_one_file_cannot_be_read(self):
         output = self.directory / "artifacts"
@@ -226,5 +253,8 @@ class WorkspaceCliTest(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(stdout.getvalue(), "Delivered.\n")
         tools = create.call_args_list[0].kwargs["tools"]
-        self.assertEqual(len(tools), 8)
+        names = [tool["function"]["name"] for tool in tools]
+        self.assertEqual(len(names), 8)
+        self.assertIn("ls", names)
+        self.assertNotIn("list_files", names)
         self.assertEqual(factory.closed, 1)

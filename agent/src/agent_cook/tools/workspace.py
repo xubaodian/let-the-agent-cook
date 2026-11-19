@@ -6,7 +6,7 @@ from agent_cook.protocol.ui import UiAttachment
 from agent_cook.sandbox.limits import MAX_COMMAND_SECONDS, MAX_FIND_RESULTS, MAX_WRITE_BYTES
 from agent_cook.tools.artifacts import ArtifactExporter
 from agent_cook.tools.registry import ToolRegistry
-from agent_cook.tools.spec import ToolContext, ToolDefinition, ToolHandler, ToolResult
+from agent_cook.tools.spec import ToolContext, ToolDefinition, ToolError, ToolHandler, ToolResult
 
 _PATH = {"type": "string", "minLength": 1, "maxLength": 1024}
 _ARGV = {
@@ -30,13 +30,20 @@ def _definition(
     })
 
 
+_LS = _definition(
+    "ls", "List files and directories. Defaults to one level at the workspace root. "
+    "Use a workspace-relative directory. Continue with next_cursor.",
+    {
+        "directory": _PATH,
+        "recursive": _BOOLEAN,
+        "kind": {"enum": ["all", "file", "directory"]},
+        "max_results": _COUNT,
+        "cursor": {**_PATH, "description": "The next_cursor from the previous listing with the same options."},
+    },
+)
 _FILES = (
     _definition(
-        "list_files", "List files and directories relative to the workspace.",
-        {"directory": _PATH, "recursive": _BOOLEAN, "max_results": _COUNT},
-    ),
-    _definition(
-        "read_file", "Read a UTF-8 workspace file by line. Use next_line to continue.",
+        "read_file", "Read UTF-8 text by line from a workspace-relative path. Use next_line to continue.",
         {
             "path": _PATH,
             "start_line": {"type": "integer", "minimum": 1},
@@ -149,6 +156,7 @@ async def _preview(arguments: dict[str, Any], context: ToolContext) -> ToolResul
 
 def workspace_tools(exporter: ArtifactExporter) -> tuple[ToolRegistry, tuple[str, ...]]:
     registry = ToolRegistry()
+    registry.register(_LS, _operation("list_files"))
     for definition in _FILES:
         registry.register(definition, _operation(definition.name))
     registry.register(_COMMAND, _run_command)
@@ -164,4 +172,4 @@ def workspace_tools(exporter: ArtifactExporter) -> tuple[ToolRegistry, tuple[str
         )
 
     registry.register(_SUBMIT, submit)
-    return registry, tuple(spec.name for spec in (*_FILES, _COMMAND, _BROWSER, _SUBMIT))
+    return registry, tuple(spec.name for spec in (_LS, *_FILES, _COMMAND, _BROWSER, _SUBMIT))

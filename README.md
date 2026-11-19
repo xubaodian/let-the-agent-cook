@@ -16,6 +16,8 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 
 用 `--sandbox docker` 或 `--sandbox e2b` 启用工作区工具。工具清单、分层和运行命令见 [工作区工具与沙箱](docs/workspace-tools.md)。
 
+使用沙箱时，可以用 `--skills-dir` 配置本机 Skill。模型先接收名称、描述和工作区入口，可用 `ls` 和 `read_file` 按需浏览和读取。[按需读取 Skill](docs/workspace-tools.md#按需读取-skill)
+
 ## Agent 包的目录
 
 `agent/pyproject.toml` 定义依赖和 CLI。下面的路径相对于 `agent/src/agent_cook/`。
@@ -27,6 +29,7 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 | `context/` | `builder.py` 从指令和会话历史组装本轮模型输入。 |
 | `model/` | `client.py` 定义模型接口。`openrouter.py` 负责 Chat Completions 的消息和工具调用格式。 |
 | `tools/` | `spec.py` 和 `registry.py` 管工具契约、授权和分派。`workspace.py` 注册工作区工具，`images.py` 接入生图，`artifacts.py` 导出交付文件。 |
+| `extensions/` | `skills.py` 发现 Skill 元数据并提供工作区所需的包文件。 |
 | `sandbox/` | `interface.py` 定义任务环境接口。`docker.py` 和 `e2b.py` 管各自的生命周期和传输。`worker/` 在沙箱内执行共用操作。 |
 | `state/` | 保存单次 Run 中原始消息及其工具调用关联。 |
 | `protocol/` | 定义可序列化的 RunEvent、ArtifactRef 和 UiAttachment，供未来的前端和回放读取。 |
