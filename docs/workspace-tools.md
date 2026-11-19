@@ -19,7 +19,7 @@ flowchart TD
 
 | 工具 | 接口与行为 |
 |---|---|
-| `ls` / `list_files` | 列出文件和子目录。默认查看工作区根目录一层，可递归、按类型过滤和分页。 |
+| `ls` | 列出文件和子目录。默认查看工作区根目录一层，可递归、按类型过滤和分页。 |
 | `read_file` | 按行读取工作区或已配置 Skill 的 UTF-8 文本，`next_line` 可用于继续阅读。 |
 | `search_files` | 按 glob 找文件，可选字面文本查询并返回行号。文本搜索会跳过常见依赖目录和二进制文件。 |
 | `write_file` | 原子写入整份 UTF-8 文本，按需创建父目录。`overwrite` 可以控制覆盖。 |
@@ -33,7 +33,7 @@ flowchart TD
 
 常规文件操作使用工作区相对路径。`playwright` 适合验证 Agent 生成的本地网页和启动的测试服务器，截图写回工作区。用 `submit_results` 选出交付文件，批次在全部读取成功后才出现在产物目录中。
 
-`ls` 的 `directory` 默认为 `.`。用 `kind=file` 或 `kind=directory` 筛选类型，用 `recursive=true` 查看子目录。结果按路径排序。下一页沿用原参数，将 `next_cursor` 传入 `cursor`。如果 `truncated=true` 且 `next_cursor` 为空，可以缩小目录范围继续查找。`list_files` 是 `ls` 的兼容入口。
+`ls` 的 `directory` 默认为 `.`。用 `kind=file` 或 `kind=directory` 筛选类型，用 `recursive=true` 查看子目录。结果按路径排序。下一页沿用原参数，将 `next_cursor` 传入 `cursor`。如果 `truncated=true` 且 `next_cursor` 为空，可以缩小目录范围继续查找。
 
 ## 按需读取 Skill
 

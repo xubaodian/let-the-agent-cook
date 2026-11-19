@@ -71,7 +71,7 @@ class WorkspaceToolTest(unittest.IsolatedAsyncioTestCase):
         output = self.directory / "artifacts"
         registry, names = workspace_tools(ArtifactExporter(output))
         steps = [
-            ("list_files", {}),
+            ("ls", {}),
             ("read_file", {"path": "input.csv", "start_line": 2, "line_count": 1}),
             ("copy_file", {"source": "input.csv", "destination": "results/copy.csv"}),
             ("search_files", {"glob": "**/*.csv", "query": "JAN"}),
@@ -160,7 +160,7 @@ class WorkspaceToolTest(unittest.IsolatedAsyncioTestCase):
         first = await invoke("ls", **options)
         self.assertEqual([entry["path"] for entry in first["entries"]], ["src/a.py", "src/sub/b.py"])
         self.assertTrue(first["truncated"])
-        second = await invoke("list_files", cursor=first["next_cursor"], **options)
+        second = await invoke("ls", cursor=first["next_cursor"], **options)
         self.assertEqual(second["entries"], [{"path": "src/sub/c.py", "kind": "file"}])
         self.assertFalse(second["truncated"])
         self.assertIsNone(second["next_cursor"])
@@ -253,5 +253,8 @@ class WorkspaceCliTest(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(stdout.getvalue(), "Delivered.\n")
         tools = create.call_args_list[0].kwargs["tools"]
-        self.assertEqual(len(tools), 9)
+        names = [tool["function"]["name"] for tool in tools]
+        self.assertEqual(len(names), 8)
+        self.assertIn("ls", names)
+        self.assertNotIn("list_files", names)
         self.assertEqual(factory.closed, 1)

@@ -36,19 +36,17 @@ def _definition(
     })
 
 
-_LIST_ARGUMENTS = {
-    "directory": _BROWSE_PATH,
-    "recursive": _BOOLEAN,
-    "kind": {"enum": ["all", "file", "directory"]},
-    "max_results": _COUNT,
-    "cursor": {**_BROWSE_PATH, "description": "The next_cursor from the previous listing with the same options."},
-}
 _LS = _definition(
     "ls", "List files and directories. Defaults to one level at the workspace root. "
     "Use a workspace-relative directory or a skill:// directory. Continue with next_cursor.",
-    _LIST_ARGUMENTS,
+    {
+        "directory": _BROWSE_PATH,
+        "recursive": _BOOLEAN,
+        "kind": {"enum": ["all", "file", "directory"]},
+        "max_results": _COUNT,
+        "cursor": {**_BROWSE_PATH, "description": "The next_cursor from the previous listing with the same options."},
+    },
 )
-_LIST_FILES = _definition("list_files", "Alias for ls.", _LIST_ARGUMENTS)
 _READ = _definition(
     "read_file", "Read UTF-8 text by line from a workspace-relative path or a skill:// path. "
     "Use next_line to continue.",
@@ -192,17 +190,15 @@ def workspace_tools(
     exporter: ArtifactExporter | None, *, skills: "SkillCatalog | None" = None,
 ) -> tuple[ToolRegistry, tuple[str, ...]]:
     registry = ToolRegistry()
-    list_handler = _browse(
+    registry.register(_LS, _browse(
         "list_files", "directory", skills.list_files if skills is not None else None,
         has_workspace=exporter is not None,
-    )
-    registry.register(_LS, list_handler)
-    registry.register(_LIST_FILES, list_handler)
+    ))
     registry.register(_READ, _browse(
         "read_file", "path", skills.read_file if skills is not None else None,
         has_workspace=exporter is not None,
     ))
-    browse_names = (_LS.name, _LIST_FILES.name, _READ.name)
+    browse_names = (_LS.name, _READ.name)
     if exporter is None:
         return registry, browse_names
 
