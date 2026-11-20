@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 from agent_cook.protocol.events import RunEvent
 
 _MENTION = re.compile(r'(?<![\w@])@(?:"(?P<quoted>(?:[^"\\]|\\.)*)"|(?P<path>[^\s"@]+))')
+_WINDOWS_MENTION = re.compile(r'(?<![\w@])@(?:"(?P<quoted>[^"]*)"|(?P<path>[^\s"@]+))')
 _TYPING = re.compile(r'(?<![\w@])@(?P<path>"[^"]*|[^\s"@]*)$')
 
 
@@ -14,14 +16,17 @@ def file_mentions(prompt: str, directory: Path) -> tuple[str, list[Path]]:
 
     def attach(match: re.Match[str]) -> str:
         if match["quoted"] is not None:
-            selected = json.loads('"' + match["quoted"] + '"')
+            selected = match["quoted"]
+            if os.name != "nt":
+                selected = json.loads('"' + selected + '"')
         else:
             selected = match["path"]
         path = directory / Path(selected).expanduser()
         paths.append(path)
         return json.dumps(path.name, ensure_ascii=False)
 
-    return _MENTION.sub(attach, prompt), paths
+    pattern = _WINDOWS_MENTION if os.name == "nt" else _MENTION
+    return pattern.sub(attach, prompt), paths
 
 
 def prompt_reader(directory: Path):
@@ -42,14 +47,14 @@ def prompt_reader(directory: Path):
                 offset = len(prefix) + completion.start_position
                 path = prefix[:offset] + completion.text
                 directory_candidate = (directory / Path(path).expanduser()).is_dir()
-                if directory_candidate and not path.endswith("/"):
-                    path += "/"
-                quoted = json.dumps(path, ensure_ascii=False)
+                text = path.replace(os.sep, "/")
+                quoted = json.dumps(text, ensure_ascii=False)
+                yield Completion(quoted, start_position=-len(raw), display=completion.display)
                 if directory_candidate:
-                    replacement = quoted[:-1]
-                else:
-                    replacement = quoted
-                yield Completion(replacement, start_position=-len(raw), display=completion.display)
+                    browse = json.dumps(text.rstrip("/") + "/", ensure_ascii=False)[:-1]
+                    yield Completion(
+                        browse, start_position=-len(raw), display=f"Browse {completion.display_text}/",
+                    )
 
     return PromptSession(completer=FileCompleter(), complete_while_typing=True).prompt
 

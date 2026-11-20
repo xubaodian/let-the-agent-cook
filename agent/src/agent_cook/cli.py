@@ -9,23 +9,28 @@ from dataclasses import asdict, replace
 from functools import partial
 from importlib.util import find_spec
 from math import ceil
-from pathlib import Path, PurePosixPath
-from shutil import which
-from subprocess import DEVNULL, TimeoutExpired, run
+from pathlib import Path
+from shutil import copytree
+from subprocess import run
+from tempfile import mkdtemp
 from uuid import uuid4
 
 from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
+from agent_cook.delivery import publish_results, result_snapshots
 from agent_cook.events.journal import RunEvents, write_jsonl
+from agent_cook.local_files import PortablePaths, collect_inputs, portable_path
 from agent_cook.model.catalog import ModelCatalog
+from agent_cook.onboarding import connect
 from agent_cook.protocol.events import RunEvent
 from agent_cook.protocol.request import RunRequest
 from agent_cook.runner import run_task
 from agent_cook.sandbox.docker import DEFAULT_DOCKER_IMAGE, DockerSandboxFactory
+from agent_cook.sandbox.docker_setup import DockerSetupError, check_linux_docker, image_available, prepare_docker
 from agent_cook.sandbox.e2b import E2BSandboxFactory
 from agent_cook.sandbox.interface import SandboxError, SandboxFactory
-from agent_cook.sandbox.limits import MAX_FILE_BYTES, MAX_TRANSFER_BYTES
-from agent_cook.sandbox.paths import workspace_path
+from agent_cook.sandbox.limits import MAX_TRANSFER_BYTES
+from agent_cook.settings import DATA, CredentialStoreError, model_catalog, release_image, saved_model, stored_key
 from agent_cook.state.local import LocalSession, LocalSessions
 from agent_cook.terminal import file_mentions, prompt_reader, show_progress
 
@@ -38,27 +43,21 @@ def _select_model(
     return (requested or "").strip() or os.environ.get(env_name, "").strip() or default
 
 
-def _read_bounded(path: Path, limit: int = MAX_FILE_BYTES) -> bytes:
-    if not path.is_file():
-        raise ValueError(f"Input '{path}' must be a regular file.")
-    with path.open("rb") as stream:
-        data = stream.read(limit + 1)
-    if len(data) > limit:
-        raise ValueError(f"Input '{path}' exceeds the file or batch transfer limit.")
-    return data
+def _chat_model(args: argparse.Namespace, catalog: ModelCatalog, requested: str | None = None) -> str | None:
+    selected = _select_model(args.model, requested, "OPENROUTER_MODEL", getattr(args, "session_model", None))
+    if selected or args.model is not None:
+        return selected
+    return saved_model() or catalog.chat.default
 
 
-def _input_files(paths: list[Path]) -> dict[str, bytes]:
-    inputs = {}
+def _stage(files: dict[str, bytes]) -> None:
+    index = PortablePaths()
     remaining = MAX_TRANSFER_BYTES
-    for path in paths:
-        name = workspace_path(path.name)
-        if name in inputs:
-            raise ValueError(f"Multiple input files have the name '{name}'.")
-        data = _read_bounded(path, min(MAX_FILE_BYTES, remaining))
-        inputs[name] = data
+    for path, data in files.items():
+        index.add(portable_path(path))
         remaining -= len(data)
-    return inputs
+        if remaining < 0:
+            raise ValueError(f"Workspace file '{path}' exceeds the session's batch transfer limit.")
 
 
 async def _run(
@@ -91,11 +90,11 @@ async def _run(
 def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalog):
     if (args.sandbox_network or request.skill_directories) and args.sandbox is None:
         raise ValueError("Sandbox networking and skill directories require --sandbox.")
-    chat_model = _select_model(args.model, request.model, "OPENROUTER_MODEL", catalog.chat.default)
+    chat_model = _chat_model(args, catalog, request.model)
     if not chat_model:
         raise ValueError(
             "Choose a chat model via --model, the task's model, OPENROUTER_MODEL, "
-            "or chat.default in --models-config."
+            "or chat.default in --models-config. Open agent-cook in a terminal for guided setup."
         )
     if (args.image_model is not None or request.image_model is not None) and args.sandbox is None:
         raise ValueError("Selecting an image model for the task requires --sandbox.")
@@ -152,6 +151,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
         prog=name, description="Run tasks with your OpenRouter model.",
         epilog="Commands: exec, resume, doctor, serve. Run without a task to start an interactive session.",
     )
+    parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
     if mode in ("local", "exec"):
         parser.add_argument("task", nargs="?", help="Text to send to the agent, or - with exec to read stdin")
     elif mode == "resume":
@@ -173,9 +173,9 @@ def _parser(mode: str) -> argparse.ArgumentParser:
         parser.add_argument("--json", action="store_true", help="Stream JSONL run events on stdout")
     parser.add_argument("--trace", type=Path, help="Write the run to a new JSONL file at this path")
     parser.add_argument("--sandbox", choices=("docker", "e2b", "none"), help="Enable task workspace tools")
-    parser.add_argument("--docker-image", default=DEFAULT_DOCKER_IMAGE, help="Prebuilt local sandbox image")
+    parser.add_argument("--docker-image", help="Use a specific prebuilt sandbox image")
     parser.add_argument("--sandbox-network", action="store_true", help="Enable outbound sandbox networking")
-    parser.add_argument("--input", action="append", type=Path, default=[], help="Copy a local input file into the workspace")
+    parser.add_argument("--input", action="append", type=Path, default=[], help="Copy a local file or folder into the workspace")
     parser.add_argument(
         "--skills-dir", action="append", type=Path, default=[], help="Load a directory of Skill packages",
     )
@@ -191,11 +191,18 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     return parser
 
 
-def _api_key() -> str:
+def _api_key(*, required: bool = True) -> str | None:
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if not key:
-        raise ValueError("Set OPENROUTER_API_KEY before running the agent.")
-    return key
+    if key:
+        return key
+    try:
+        if key := stored_key():
+            return key
+    except CredentialStoreError:
+        pass
+    if required:
+        raise ValueError("Set OPENROUTER_API_KEY or open agent-cook in a terminal to connect OpenRouter.")
+    return None
 
 
 def _paths(args: argparse.Namespace, directory: Path) -> None:
@@ -216,28 +223,31 @@ def _request(args: argparse.Namespace, task: str) -> RunRequest:
     )
 
 
-def _set_sandbox(args: argparse.Namespace, selected: str | None) -> None:
+def _set_sandbox(args: argparse.Namespace, selected: str | None, *, has_inputs: bool = False) -> None:
     if selected not in (None, "none", "docker", "e2b"):
         raise ValueError("The task sandbox must be docker, e2b or none.")
-    args.sandbox = selected if selected != "none" else None
+    args.sandbox = None if selected == "none" else selected or ("docker" if has_inputs else None)
 
 
 def _execute(args, directory, prepared, task, api_key, inputs, *, observer=None, **extra):
     if inputs and prepared[1] is None:
         raise ValueError("Input files require --sandbox docker or --sandbox e2b.")
     spec, factory, options = prepared
+    if args.sandbox == "docker":
+        prepare_docker(args.docker_image, pull=args.docker_image == args.release_image)
     run_id = uuid4().hex
     trace = args.trace or directory / ".agent-cook" / "runs" / f"{run_id}.jsonl"
     result = asyncio.run(_run(
         spec, task, api_key, trace, run_id, factory, inputs,
         observer=observer, **options, **extra,
     ))
+    delivered = publish_results(trace, result)
     if not getattr(args, "json", False):
         print(result.text)
     print(f"Trace written to {trace}", file=sys.stderr)
-    for artifact in result.artifacts:
-        print(f"Result file {trace.parent / artifact.path}", file=sys.stderr)
-    return result, trace
+    if delivered is not None:
+        print(f"Results: {delivered}", file=sys.stderr)
+    return result, trace, delivered
 
 
 def _failure(error: Exception) -> None:
@@ -250,29 +260,52 @@ def _failure(error: Exception) -> None:
     print(message, file=sys.stderr)
 
 
-def _restore_results(trace: Path, result: RunResult) -> dict[str, bytes]:
-    snapshots = {}
-    for artifact in result.artifacts:
-        relative = PurePosixPath(artifact.path)
-        if len(relative.parts) < 3 or relative.parts[0] != f"{result.run_id}-artifacts":
-            raise ValueError("The result does not belong to this run's export.")
-        path = workspace_path(PurePosixPath(*relative.parts[2:]).as_posix())
-        snapshots[path] = _read_bounded(trace.parent / artifact.path)
-    return snapshots
+def _open_directory(path: Path) -> None:
+    if not path.is_dir():
+        raise ValueError(f"Could not find the results directory '{path}'.")
+    if sys.platform == "win32":
+        os.startfile(path)
+    else:
+        command = "open" if sys.platform == "darwin" else "xdg-open"
+        if run([command, str(path)]).returncode:
+            raise ValueError(f"Could not open '{path}'.")
+
+
+def _example(directory: Path) -> Path:
+    examples = directory / ".agent-cook" / "examples"
+    examples.mkdir(parents=True, exist_ok=True)
+    parent = Path(mkdtemp(prefix="sample-", dir=examples))
+    source = DATA / "资料 样例"
+    return copytree(source, parent / source.name)
 
 
 def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalog, resume: bool) -> int:
     store = LocalSessions(directory / ".agent-cook" / "sessions.sqlite3")
     saved = store.load(args.session_id) if resume else LocalSession()
-    configured = saved.sandbox if resume else os.environ.get("AGENT_COOK_SANDBOX", "").strip() or None
-    _set_sandbox(args, args.sandbox or configured)
-    if args.model is None:
-        args.model = saved.model
+    selected = args.sandbox or os.environ.get("AGENT_COOK_SANDBOX", "").strip() or saved.sandbox
+    _set_sandbox(args, selected, has_inputs=bool(args.input or saved.inputs or saved.results))
+    args.session_model = saved.model
     if args.image_model is None and args.sandbox is not None:
         args.image_model = saved.image_model
-    read = prompt_reader(directory) if sys.stdin.isatty() and sys.stdout.isatty() else input
+    terminal = sys.stdin.isatty() and sys.stdout.isatty()
+    read = prompt_reader(directory) if terminal else input
     pending = list(args.input)
+    api_key = _api_key(required=False)
+
+    def setup() -> None:
+        nonlocal api_key
+        if not terminal:
+            raise ValueError("Open agent-cook in a terminal to connect OpenRouter.")
+        api_key, args.model = connect(read, catalog.chat, api_key=api_key, model=_chat_model(args, catalog))
+
     print(f"Session {saved.id} in {directory}. Type /help for commands.", file=sys.stderr)
+    if terminal and (not api_key or not _chat_model(args, catalog)):
+        try:
+            setup()
+        except (KeyboardInterrupt, EOFError):
+            print("Setup paused. Type /setup to continue.", file=sys.stderr)
+        except (OSError, ValueError) as error:
+            _failure(error)
     while True:
         try:
             line = read("cook> ").strip()
@@ -289,6 +322,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                 return 0
             if command == "/new":
                 saved = LocalSession()
+                args.session_model = None
                 pending.clear()
                 print(f"Session {saved.id}", file=sys.stderr)
             elif command == "/files":
@@ -303,43 +337,86 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                 if value:
                     try:
                         _set_sandbox(args, value)
+                        selected = value
                         if args.sandbox is None:
                             args.image_model = None
                     except ValueError as error:
                         _failure(error)
                 else:
-                    print(args.sandbox or "none")
+                    print(selected or "auto (Docker with selected files)")
+            elif command in ("/setup", "/example", "/open"):
+                try:
+                    if command == "/setup":
+                        setup()
+                    elif command == "/example":
+                        path = _example(directory)
+                        quoted = json.dumps(path.as_posix(), ensure_ascii=False)
+                        print(f"Example: Summarize the sales table in @{quoted} and submit a short report.")
+                    elif saved.result_dir is None:
+                        print("This session has no results directory yet.")
+                    else:
+                        _open_directory(Path(saved.result_dir))
+                except (KeyboardInterrupt, EOFError):
+                    print("Command cancelled.", file=sys.stderr)
+                except (OSError, ValueError) as error:
+                    _failure(error)
             elif command == "/help":
-                print("Use @path for a file. Commands: /files, /model [id], /sandbox [backend], /new, /exit.")
+                print(
+                    "Use @path or @\"path with spaces\" for a file or folder. "
+                    "Commands: /setup, /example, /open, /files, /model [id], /sandbox [backend], /new, /exit."
+                )
             else:
                 print(f"Unknown command {command}. Use /help.", file=sys.stderr)
             continue
         try:
             task, mentions = file_mentions(line, directory)
-            added = _input_files(list(dict.fromkeys((*pending, *mentions))))
+            paths = list(dict.fromkeys((*pending, *mentions)))
+            added = collect_inputs(paths)
             inputs = {**saved.inputs, **added}
             staged = {**saved.inputs, **saved.results, **added}
-            if sum(map(len, staged.values())) > MAX_TRANSFER_BYTES:
-                raise ValueError("This session's inputs and results exceed the workspace transfer limit.")
+            _stage(staged)
+            _set_sandbox(args, selected, has_inputs=bool(paths or staged))
+            if paths and args.sandbox is None:
+                raise ValueError("Selected files and folders require --sandbox docker or --sandbox e2b.")
             request = _request(args, task)
+            if terminal and (not api_key or not _chat_model(args, catalog, request.model)):
+                setup()
             prepared = _prepare(args, request, catalog)
             spec, _, options = prepared
             history = saved.continue_history(spec.model)
-            result, trace = _execute(
-                args, directory, prepared, request.task, _api_key(), staged,
-                observer=show_progress, session=history,
-            )
-            snapshots = _restore_results(trace, result) if result.artifacts else saved.results
-            if sum(map(len, {**inputs, **snapshots}.values())) > MAX_TRANSFER_BYTES:
-                raise ValueError("The result was exported. Its snapshots exceed the session transfer limit.")
+            while True:
+                try:
+                    result, trace, delivered = _execute(
+                        args, directory, prepared, request.task, api_key or _api_key(), staged,
+                        observer=show_progress, session=history,
+                    )
+                    break
+                except DockerSetupError as error:
+                    if not terminal:
+                        raise
+                    print(error, file=sys.stderr)
+                    if read("Press Enter to retry this task after preparing Docker, or type cancel: ").strip():
+                        raise KeyboardInterrupt from None
+            snapshots = saved.results
+            if delivered is not None:
+                try:
+                    snapshots = result_snapshots(trace, result)
+                    _stage({**inputs, **snapshots})
+                except (OSError, ValueError) as error:
+                    print(f"{error} Use @ to select files from the results directory for your next task.", file=sys.stderr)
+                    snapshots = {}
             saved = store.save(replace(
-                saved, history=history, model=spec.model, sandbox=args.sandbox,
+                saved, history=history, model=spec.model, sandbox=selected,
                 image_model=options["image_model"], inputs=inputs, results=snapshots,
+                result_dir=str(delivered) if delivered else saved.result_dir,
             ))
+            args.session_model = spec.model
             args.trace = None
             pending.clear()
         except KeyboardInterrupt:
             print("Run cancelled.", file=sys.stderr)
+        except EOFError:
+            return 0
         except Exception as error:
             _failure(error)
 
@@ -347,12 +424,22 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
 def _doctor(args: argparse.Namespace, catalog: ModelCatalog) -> int:
     checks = {
         "Python OpenAI SDK": bool(find_spec("openai")),
-        "OpenRouter API key configured": bool(os.environ.get("OPENROUTER_API_KEY", "").strip()),
-        "Chat model configured": bool(_select_model(args.model, None, "OPENROUTER_MODEL", catalog.chat.default)),
+        "OpenRouter API key configured": bool(_api_key(required=False)),
+        "Chat model configured": bool(_chat_model(args, catalog)),
     }
     if args.sandbox == "docker":
-        checks["Docker daemon"] = bool(which("docker")) and _docker_check("info", "--format", "{{.ServerVersion}}")
-        checks["Sandbox image"] = checks["Docker daemon"] and _docker_check("image", "inspect", args.docker_image)
+        try:
+            executable = check_linux_docker()
+            checks["Docker Linux engine"] = True
+            checks["Sandbox image"] = image_available(executable, args.docker_image)
+        except DockerSetupError as error:
+            checks["Docker workspace"] = False
+            print(error, file=sys.stderr)
+        if checks.get("Sandbox image") is False:
+            if args.docker_image == args.release_image:
+                print("The first Docker task will download the workspace image.", file=sys.stderr)
+            else:
+                print("Run ./cook setup --docker to build the development image.", file=sys.stderr)
     if args.sandbox == "e2b":
         checks["E2B SDK"] = bool(find_spec("e2b"))
         checks["E2B credentials and template"] = all(
@@ -360,16 +447,7 @@ def _doctor(args: argparse.Namespace, catalog: ModelCatalog) -> int:
         )
     for label, available in checks.items():
         print(f"{'OK' if available else 'Missing'}  {label}")
-    if args.sandbox == "docker" and not checks["Sandbox image"]:
-        print("Start Docker and run ./cook setup --docker from the repository.", file=sys.stderr)
     return 0 if all(checks.values()) else 1
-
-
-def _docker_check(*args: str) -> bool:
-    try:
-        return run(["docker", *args], stdout=DEVNULL, stderr=DEVNULL, timeout=5).returncode == 0
-    except (OSError, TimeoutExpired):
-        return False
 
 
 def _serve(args, catalog: ModelCatalog) -> int:
@@ -409,11 +487,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser(mode)
     args = parser.parse_args(words)
     try:
-        directory = (args.cd or Path.cwd()).expanduser().resolve(strict=True)
+        directory = args.cd
+        if directory is None:
+            directory = Path.home() / "Agent Cook" if args.app else Path.cwd()
+            if args.app:
+                directory.mkdir(exist_ok=True)
+        directory = directory.expanduser().resolve(strict=True)
         if not directory.is_dir():
             raise ValueError("--cd must name a directory.")
         _paths(args, directory)
-        catalog = ModelCatalog.load(args.models_config) if args.models_config is not None else ModelCatalog()
+        catalog = model_catalog(args.models_config)
+        args.release_image = release_image()
+        args.docker_image = args.docker_image or args.release_image or DEFAULT_DOCKER_IMAGE
         if args.list_models:
             print(json.dumps(asdict(catalog), indent=2))
             return 0
@@ -425,7 +510,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("Use exec --json for machine-readable output.")
             return _interactive(args, directory, catalog, mode == "resume")
         configured = os.environ.get("AGENT_COOK_SANDBOX", "").strip() or None
-        _set_sandbox(args, args.sandbox or configured)
+        _set_sandbox(args, args.sandbox or configured, has_inputs=bool(args.input))
         if args.request is not None and (
             getattr(args, "task", None) is not None or args.plugin or args.skills_dir or args.skill or args.mcp_tool
         ):
@@ -440,9 +525,9 @@ def main(argv: list[str] | None = None) -> int:
         task = sys.stdin.read() if mode == "exec" and args.task == "-" else (args.task or "")
         request = _request(args, task)
         prepared = _prepare(args, request, catalog)
-        inputs = _input_files(args.input)
-        if inputs and prepared[1] is None:
-            raise ValueError("Input files require --sandbox docker or --sandbox e2b.")
+        if args.input and prepared[1] is None:
+            raise ValueError("Selected files and folders require --sandbox docker or --sandbox e2b.")
+        inputs = collect_inputs(args.input)
     except (OSError, ValueError, sqlite3.Error) as error:
         parser.error(str(error))
 

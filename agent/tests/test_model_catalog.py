@@ -84,6 +84,7 @@ class ModelCatalogTest(unittest.TestCase):
                     self.subTest(chat=chat_model, image=image_model),
                     patch.dict(os.environ, {**environment, **env}, clear=True),
                     patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=run_result) as run,
+                    patch("agent_cook.cli.prepare_docker"),
                     redirect_stdout(io.StringIO()),
                     redirect_stderr(io.StringIO()),
                 ):

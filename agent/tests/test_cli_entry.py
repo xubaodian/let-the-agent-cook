@@ -91,7 +91,10 @@ class CliEntryTest(unittest.TestCase):
             resumed_root.mkdir()
             first = WorkerFixture(initial_root)
             second = WorkerFixture(resumed_root)
-            with patch("agent_cook.cli.DockerSandboxFactory", side_effect=[first, second]):
+            with (
+                patch("agent_cook.cli.DockerSandboxFactory", side_effect=[first, second]),
+                patch("agent_cook.cli.prepare_docker"),
+            ):
                 with patch("sys.stdin", io.StringIO('Read @"sales data.csv" and write a note.\n/exit\n')):
                     status = main(["-C", directory, "--sandbox", "docker"])
                 self.assertEqual(status, 0, diagnostics.getvalue())

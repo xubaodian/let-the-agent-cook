@@ -1,7 +1,5 @@
 name: Resolve installer dependencies
-on:
-  push:
-    branches: [feat/docker-file-installers]
+on: pull_request
 permissions:
   contents: read
 jobs:

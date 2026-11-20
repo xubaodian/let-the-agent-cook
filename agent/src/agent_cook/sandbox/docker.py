@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager, suppress
 from uuid import uuid4
 
 from agent_cook.sandbox.client import WorkerSandbox
+from agent_cook.sandbox.docker_setup import docker_command
 from agent_cook.sandbox.interface import Sandbox, SandboxError
 from agent_cook.sandbox.limits import MAX_RPC_BYTES, WORKER_MODULE, WORKER_PYTHON, WORKSPACE_ROOT
 
@@ -16,7 +17,7 @@ async def _docker(
 ) -> tuple[int, bytes, bytes]:
     try:
         process = await asyncio.create_subprocess_exec(
-            "docker",
+            docker_command(),
             *args,
             stdin=asyncio.subprocess.PIPE if payload is not None else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,

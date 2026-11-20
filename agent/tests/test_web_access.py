@@ -239,6 +239,7 @@ class WebCliTest(unittest.TestCase):
                 }),
                 patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}),
                 patch("agent_cook.cli.DockerSandboxFactory", side_effect=[local, browser]) as factory,
+                patch("agent_cook.cli.prepare_docker"),
                 redirect_stdout(io.StringIO()),
                 redirect_stderr(io.StringIO()) as stderr,
             ):

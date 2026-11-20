@@ -13,9 +13,9 @@ from agent_cook.extensions.files import FileTree
 from agent_cook.extensions.frontmatter import read_frontmatter
 from agent_cook.extensions.hooks import HookSpec
 from agent_cook.extensions.mcp import McpServer, read_servers
+from agent_cook.local_files import LocalTree
 from agent_cook.sandbox.limits import MAX_COMMAND_SECONDS, MAX_TEXT_FILE_BYTES
 from agent_cook.sandbox.paths import workspace_path
-from agent_cook.sandbox.worker.workspace import Workspace
 
 PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 _STRING = {"type": "string", "minLength": 1}
@@ -81,7 +81,7 @@ def load_plugins(directories: tuple[Path, ...]) -> tuple[Plugin, ...]:
 
 
 def _load(directory: Path) -> Plugin:
-    source = Workspace(directory)
+    source = LocalTree(directory)
     manifest = _read_json(source, "plugin.json")
     name = manifest.get("name")
     if (
@@ -105,7 +105,7 @@ def _load(directory: Path) -> Plugin:
     return Plugin(name, source.root / "skills" if "skills" in dirs else None, agents, hooks, files, servers)
 
 
-def _read_json(source: Workspace, path: str) -> dict[str, Any]:
+def _read_json(source: LocalTree, path: str) -> dict[str, Any]:
     try:
         data = json.loads(source.read_bytes(path, MAX_TEXT_FILE_BYTES))
     except ValueError as error:
@@ -115,7 +115,7 @@ def _read_json(source: Workspace, path: str) -> dict[str, Any]:
     return data
 
 
-def _load_agents(source: Workspace) -> tuple[SubagentSpec, ...]:
+def _load_agents(source: LocalTree) -> tuple[SubagentSpec, ...]:
     entries, limited = source.entries("agents", recursive=False)
     if limited:
         raise ValueError("The plugin agent directory has too many entries.")
@@ -139,7 +139,7 @@ def _load_agents(source: Workspace) -> tuple[SubagentSpec, ...]:
     return tuple(agents)
 
 
-def _load_hooks(source: Workspace, plugin: str) -> tuple[HookSpec, ...]:
+def _load_hooks(source: LocalTree, plugin: str) -> tuple[HookSpec, ...]:
     try:
         document = _read_json(source, _HOOKS_PATH)
     except FileNotFoundError:
