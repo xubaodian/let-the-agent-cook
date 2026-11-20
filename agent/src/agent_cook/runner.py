@@ -1,0 +1,96 @@
+from contextlib import AsyncExitStack
+from dataclasses import replace
+from functools import partial
+from pathlib import Path
+
+from agent_cook.core.run import run_agent
+from agent_cook.core.types import AgentSpec, RunResult
+from agent_cook.events.journal import RunEvents
+from agent_cook.extensions.hooks import HookRunner
+from agent_cook.extensions.mcp import register_mcp_tools
+from agent_cook.extensions.plugins import Plugin
+from agent_cook.extensions.skills import SkillCatalog
+from agent_cook.model.openrouter import OPENROUTER_BASE_URL, OpenRouterModel
+from agent_cook.model.openrouter_images import OpenRouterImageGenerator
+from agent_cook.protocol.request import WebOptions
+from agent_cook.sandbox.interface import SandboxFactory
+from agent_cook.state.session import Session
+from agent_cook.tools.artifacts import ArtifactExporter
+from agent_cook.tools.images import register_image_tool
+from agent_cook.tools.public_browser import PublicBrowser
+from agent_cook.tools.registry import ToolRegistry
+from agent_cook.tools.workspace import workspace_tools
+
+
+async def run_task(
+    spec: AgentSpec,
+    task: str,
+    api_key: str,
+    factory: SandboxFactory | None,
+    inputs: dict[str, bytes],
+    *,
+    events: RunEvents,
+    artifact_dir: Path,
+    image_model: str | None = None,
+    skills: SkillCatalog | None = None,
+    plugins: tuple[Plugin, ...] = (),
+    mcp_tools: tuple[str, ...] | None = None,
+    web: WebOptions = WebOptions(),
+    browser_factory: SandboxFactory | None = None,
+    session: Session | None = None,
+) -> RunResult:
+    """Assemble and execute one task for either the CLI or HTTP service."""
+    from openai import AsyncOpenAI
+
+    async with AsyncExitStack() as resources:
+        client = await resources.enter_async_context(AsyncOpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL))
+        registry = ToolRegistry()
+        tool_names: tuple[str, ...] = ()
+        if factory is not None:
+            exporter = ArtifactExporter(artifact_dir)
+            browser = (
+                PublicBrowser(browser_factory, resources, events.run_id, web.browser_origins)
+                if browser_factory is not None else None
+            )
+            registry, tool_names = workspace_tools(exporter, public_browser=browser)
+            if image_model is not None:
+                image_tool = register_image_tool(registry, OpenRouterImageGenerator(client, image_model))
+                tool_names = (*tool_names, image_tool)
+        servers = tuple(server for plugin in plugins for server in plugin.mcp_servers)
+        mcp_names = await register_mcp_tools(resources, registry, servers, selected=mcp_tools)
+        tool_names += mcp_names
+        instructions = spec.instructions
+        if web.enabled:
+            instructions += "\n\nUse web search to find sources and web fetch to read a known URL. Cite the sources you use."
+        if browser_factory is not None:
+            instructions += (
+                "\n\nUse Playwright on an approved public origin when reading the page requires interaction or a screenshot."
+            )
+        spec = replace(
+            spec, tool_names=tool_names, web_enabled=web.enabled,
+            instructions=skills.instructions(instructions) if skills is not None else instructions.strip(),
+        )
+        hooks = tuple(hook for plugin in plugins for hook in plugin.hooks)
+        trees = tuple(tree for plugin in plugins for tree in plugin.files)
+        workspace_inputs = (
+            partial(skills.workspace_files, inputs, extra_trees=trees)
+            if skills is not None and (skills.names or trees) else inputs
+        )
+        if plugins or skills is not None or mcp_tools is not None:
+            events.emit(
+                "extensions.loaded", plugins=[plugin.name for plugin in plugins],
+                skills=list(skills.names) if skills is not None else [],
+                mcp_tools=list(mcp_names),
+            )
+        return await run_agent(
+            spec,
+            task,
+            model=OpenRouterModel(client),
+            tools=registry,
+            sandbox_factory=factory,
+            input_files=workspace_inputs,
+            events=events,
+            subagents=tuple(agent for plugin in plugins for agent in plugin.subagents),
+            hook=HookRunner(hooks) if hooks else None,
+            session=session,
+        )

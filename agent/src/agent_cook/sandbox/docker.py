@@ -1,4 +1,5 @@
 import asyncio
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from uuid import uuid4
@@ -47,6 +48,16 @@ class DockerSandboxFactory:
             raise ValueError("Provide a Docker image name.")
         self._image = image
         self._network = "bridge" if allow_network else "none"
+
+    async def reclaim(self, run_id: str) -> None:
+        for label in (run_id, f"{run_id}-web"):
+            code, stdout, _ = await _docker("ps", "-aq", "--filter", f"label=agent-cook.run={label}")
+            if code:
+                raise SandboxError("Docker could not list containers for this run.")
+            for container in stdout.decode("ascii").splitlines():
+                if not re.fullmatch(r"[a-f0-9]{12,64}", container):
+                    raise SandboxError("Docker returned an invalid container ID.")
+                await self._remove(container)
 
     @asynccontextmanager
     async def open(self, run_id: str) -> AsyncIterator[Sandbox]:

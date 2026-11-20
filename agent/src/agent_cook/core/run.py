@@ -25,6 +25,7 @@ async def run_agent(
     events: RunEvents | None = None,
     subagents: Sequence[SubagentSpec] = (),
     hook: ToolHook | None = None,
+    session: Session | None = None,
 ) -> RunResult:
     """Run a task and own its resources through completion or cancellation.
 
@@ -41,7 +42,8 @@ async def run_agent(
         tools = tools.copy()
         register_delegate(tools, subagents, spec, model)
         spec = replace(spec, tool_names=(*spec.tool_names, DELEGATE_TOOL))
-    session = Session([Message(role="user", content=task)])
+    session = session if session is not None else Session()
+    session.messages.append(Message(role="user", content=task))
     inputs = dict(input_files) if isinstance(input_files, Mapping) else input_files
     events.emit("run.started", model=spec.model)
 

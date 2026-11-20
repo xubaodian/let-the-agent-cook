@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+if ! command -v uv >/dev/null; then
+    echo "Install uv first. On macOS: brew install uv" >&2
+    echo "https://docs.astral.sh/uv/getting-started/installation/" >&2
+    exit 1
+fi
+
+project=(--project "$root/agent" --locked --extra mcp --extra e2b)
+
+build_workspace() {
+    if ! docker info >/dev/null 2>&1; then
+        echo "Start Docker before building the workspace image." >&2
+        exit 1
+    fi
+    docker build -f "$root/sandbox/Dockerfile" -t agent-cook-sandbox:local "$root"
+}
+
+command_name="${1:-}"
+if [[ "$command_name" == setup ]]; then
+    shift
+    if [[ $# -gt 1 || ($# -eq 1 && "$1" != --docker) ]]; then
+        echo "Usage: ./cook setup [--docker]" >&2
+        exit 2
+    fi
+    if [[ ! -e "$root/.env" ]]; then
+        (umask 077 && set -o noclobber && cat "$root/.env.example" > "$root/.env")
+        echo "Fill in OPENROUTER_API_KEY and OPENROUTER_MODEL in .env."
+    fi
+    uv sync "${project[@]}"
+    if [[ $# -eq 1 ]]; then
+        build_workspace
+    fi
+    exit 0
+fi
+
+if [[ -f "$root/.env" ]]; then
+    project+=(--env-file "$root/.env")
+fi
+case "$command_name" in
+    run)
+        shift
+        exec uv run "${project[@]}" agent-cook exec "$@"
+        ;;
+    serve)
+        exec uv run "${project[@]}" --extra server agent-cook "$@"
+        ;;
+    demo)
+        shift
+        name="${1:-quickstart}"
+        case "$name" in
+            quickstart|shop-review|event-registration|combined-review) ;;
+            *) echo "Unknown demo '$name'." >&2
+               exit 2 ;;
+        esac
+        if [[ $# -gt 1 ]]; then
+            echo "Usage: ./cook demo [quickstart|shop-review|event-registration|combined-review]" >&2
+            exit 2
+        fi
+        build_workspace
+        exec uv run "${project[@]}" python "$root/examples/run_demo.py" "$name"
+        ;;
+    *)
+        exec uv run "${project[@]}" agent-cook "$@"
+        ;;
+esac

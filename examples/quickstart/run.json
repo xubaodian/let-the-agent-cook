@@ -1,0 +1,4 @@
+{
+  "schema_version": 1,
+  "task": "Create a self-contained index.html with a 'Hello from Agent Cook' heading. Use playwright on that file to assert that the heading is visible and save proof.png, then use submit_results to deliver index.html and proof.png."
+}

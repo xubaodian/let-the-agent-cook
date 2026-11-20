@@ -13,7 +13,7 @@ from typing import Any
 from agent_cook.sandbox.limits import MAX_COMMAND_OUTPUT, MAX_COMMAND_SECONDS
 from agent_cook.sandbox.worker.workspace import Workspace
 
-_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "PLAYWRIGHT_BROWSERS_PATH")
+_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "PLAYWRIGHT_BROWSERS_PATH", "MPLBACKEND")
 
 
 def launch(
