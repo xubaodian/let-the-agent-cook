@@ -6,14 +6,14 @@ from pathlib import Path
 
 from agent_cook.extensions.files import FileTree, collect_workspace_files
 from agent_cook.extensions.frontmatter import read_frontmatter
-from agent_cook.sandbox.worker.workspace import Workspace
+from agent_cook.local_files import LocalTree
 
 
 @dataclass(frozen=True, slots=True)
 class _Skill:
     name: str
     description: str
-    source: Workspace
+    source: LocalTree
 
     @property
     def entry(self) -> str:
@@ -27,7 +27,7 @@ class SkillCatalog:
         self._skills: dict[str, _Skill] = {}
         selected = None if mount is None else set(mount)
         for directory in directories:
-            source = Workspace(directory)
+            source = LocalTree(directory)
             entries, scan_limited = source.entries(".", recursive=False)
             if scan_limited:
                 raise ValueError(f"The skills directory '{directory}' has too many entries.")

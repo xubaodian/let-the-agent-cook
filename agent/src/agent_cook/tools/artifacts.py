@@ -5,10 +5,10 @@ from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
+from agent_cook.local_files import PortablePaths, portable_path
 from agent_cook.protocol.artifacts import ArtifactRef
 from agent_cook.sandbox.interface import Sandbox, SandboxError
 from agent_cook.sandbox.limits import MAX_TRANSFER_BYTES
-from agent_cook.sandbox.paths import workspace_path
 from agent_cook.tools.spec import SubmittedFile, ToolError
 
 SUBMIT_RESULTS = "submit_results"
@@ -38,7 +38,10 @@ class ArtifactExporter:
 
     async def submit(self, sandbox: Sandbox, paths: list[str]) -> tuple[SubmittedFile, ...]:
         try:
-            selected = [workspace_path(path) for path in paths]
+            selected = [portable_path(path) for path in paths]
+            index = PortablePaths()
+            for path in selected:
+                index.add(path)
         except ValueError as error:
             raise ToolError(str(error)) from error
         if len(selected) != len(set(selected)):

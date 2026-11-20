@@ -9,6 +9,7 @@ description = "The Python runtime for Let the Agent Cook"
 requires-python = ">=3.11"
 dependencies = [
     "jsonschema>=4.23,<5",
+    "keyring>=25.6,<26",
     "openai>=1.66,<3",
     "prompt-toolkit>=3.0.50,<4",
     "PyYAML>=6,<7",
@@ -19,6 +20,7 @@ e2b = ["e2b>=2.56,<3"]
 mcp = ["mcp>=1.29,<2"]
 server = ["fastapi>=0.115,<1", "uvicorn>=0.32,<1"]
 examples = ["openpyxl==3.1.5", "python-pptx==1.0.2", "playwright==1.62.0"]
+release = ["pyinstaller>=6.12,<7"]
 
 [project.scripts]
 agent-cook = "agent_cook.cli:main"
@@ -28,3 +30,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "agent_cook.context" = ["execution_prompt.md"]
+"agent_cook" = ["data/**/*"]

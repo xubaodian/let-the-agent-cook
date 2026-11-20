@@ -1,0 +1,94 @@
+name: Native Agent Cook installers
+
+on:
+  workflow_call:
+    inputs:
+      signed:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            platform: windows-x64
+          - runner: macos-15
+            platform: macos-arm64
+          - runner: ubuntu-24.04
+            platform: ubuntu-amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Install locked packaging dependencies
+        run: uv sync --project agent --locked --extra release --extra mcp --extra server --extra e2b
+      - name: Validate native host paths
+        run: uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_local_files.py -v
+      - name: Install WiX
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet tool install --tool-path "$env:RUNNER_TEMP/wix" wix --version 6.0.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:RUNNER_TEMP/wix" >> $env:GITHUB_PATH
+      - name: Build native installer
+        shell: bash
+        env:
+          SIGNED: ${{ inputs.signed }}
+          MODELS: ${{ vars.AGENT_COOK_MODELS_JSON }}
+          WINDOWS_PFX_BASE64: ${{ inputs.signed && secrets.WINDOWS_PFX_BASE64 || '' }}
+          WINDOWS_PFX_PASSWORD: ${{ inputs.signed && secrets.WINDOWS_PFX_PASSWORD || '' }}
+          MACOS_APP_IDENTITY: ${{ inputs.signed && secrets.MACOS_APP_IDENTITY || '' }}
+          MACOS_INSTALLER_IDENTITY: ${{ inputs.signed && secrets.MACOS_INSTALLER_IDENTITY || '' }}
+          MACOS_APP_P12_BASE64: ${{ inputs.signed && secrets.MACOS_APP_P12_BASE64 || '' }}
+          MACOS_APP_P12_PASSWORD: ${{ inputs.signed && secrets.MACOS_APP_P12_PASSWORD || '' }}
+          MACOS_INSTALLER_P12_BASE64: ${{ inputs.signed && secrets.MACOS_INSTALLER_P12_BASE64 || '' }}
+          MACOS_INSTALLER_P12_PASSWORD: ${{ inputs.signed && secrets.MACOS_INSTALLER_P12_PASSWORD || '' }}
+          MACOS_NOTARY_KEY_BASE64: ${{ inputs.signed && secrets.MACOS_NOTARY_KEY_BASE64 || '' }}
+          MACOS_NOTARY_KEY_ID: ${{ inputs.signed && secrets.MACOS_NOTARY_KEY_ID || '' }}
+          MACOS_NOTARY_ISSUER: ${{ inputs.signed && secrets.MACOS_NOTARY_ISSUER || '' }}
+        run: |
+          version="$(uv run --project agent --no-sync python -c 'from importlib.metadata import version; print(version("agent-cook"))')"
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$owner/agent-cook-sandbox:v$version"
+          options=()
+          if [[ "$SIGNED" == true ]]; then options+=(--sign); fi
+          if [[ -n "$MODELS" ]]; then
+            printf '%s\n' "$MODELS" > "$RUNNER_TEMP/models.json"
+            options+=(--models "$RUNNER_TEMP/models.json")
+          fi
+          uv run --project agent --no-sync python installers/build.py \
+            --image "$image" --output "$RUNNER_TEMP/agent-cook-installers" "${options[@]}"
+      - name: Install MSI and exercise the native entry point
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $msi = "$env:RUNNER_TEMP\agent-cook-installers\AgentCook-windows-x64.msi"
+          $log = "$env:RUNNER_TEMP\agent-cook-install.log"
+          $install = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i "{0}" /qn /norestart /l*v "{1}"' -f $msi, $log)
+          if ($install.ExitCode -notin @(0, 3010)) {
+            Get-Content $log -Tail 60
+            throw "MSI installation failed with status $($install.ExitCode)"
+          }
+          uv run --project agent --no-sync python installers/smoke.py "$env:LOCALAPPDATA\Programs\Agent Cook\agent-cook.exe"
+      - name: Install PKG and exercise the bundled interpreter
+        if: runner.os == 'macOS'
+        run: |
+          sudo installer -pkg "$RUNNER_TEMP/agent-cook-installers/AgentCook-macos-arm64.pkg" -target /
+          uv run --project agent --no-sync python installers/smoke.py "/Applications/Agent Cook.app/Contents/Resources/agent-cook/agent-cook"
+      - name: Install DEB and exercise the system entry point
+        if: runner.os == 'Linux'
+        run: |
+          sudo dpkg -i "$RUNNER_TEMP/agent-cook-installers/AgentCook-ubuntu-amd64.deb"
+          uv run --project agent --no-sync python installers/smoke.py /usr/bin/agent-cook
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AgentCook-${{ matrix.platform }}
+          path: ${{ runner.temp }}/agent-cook-installers/*
+          if-no-files-found: error

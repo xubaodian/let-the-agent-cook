@@ -20,6 +20,7 @@ class LocalSession:
     sandbox: str | None = None
     inputs: dict[str, bytes] = field(default_factory=dict)
     results: dict[str, bytes] = field(default_factory=dict)
+    result_dir: str | None = None
 
     def continue_history(self, model: str) -> Session:
         messages = list(self.history.messages)
@@ -82,6 +83,7 @@ class LocalSessions:
             "checkpoint": asdict(session.history.checkpoint) if session.history.checkpoint is not None else None,
             "failed_tool_calls": sorted(session.history.failed_tool_calls),
             "model": session.model, "image_model": session.image_model, "sandbox": session.sandbox,
+            "result_dir": session.result_dir,
         }, ensure_ascii=False)
         with closing(sqlite3.connect(self._database)) as db, db:
             if session.revision == 0:

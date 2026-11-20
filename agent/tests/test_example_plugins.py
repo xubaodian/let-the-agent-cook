@@ -252,6 +252,7 @@ class ExamplePluginsTest(unittest.TestCase):
             resources.enter_context(patch.dict(os.environ, environment))
             resources.enter_context(patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}))
             resources.enter_context(patch("agent_cook.cli.DockerSandboxFactory", return_value=worker))
+            resources.enter_context(patch("agent_cook.cli.prepare_docker"))
             resources.enter_context(redirect_stdout(io.StringIO()))
             stderr = resources.enter_context(stderr_path.open("w", encoding="utf-8"))
             resources.enter_context(redirect_stderr(stderr))

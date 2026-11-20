@@ -97,6 +97,7 @@ class ImageCliTest(unittest.TestCase):
                 patch.dict(os.environ, environment),
                 patch.dict(sys.modules, {"openai": sdk_module(client)}),
                 patch("agent_cook.cli.DockerSandboxFactory", return_value=factory),
+                patch("agent_cook.cli.prepare_docker"),
                 redirect_stdout(io.StringIO()),
                 redirect_stderr(io.StringIO()) as stderr,
             ):

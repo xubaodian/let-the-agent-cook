@@ -299,6 +299,7 @@ class WorkspaceCliTest(unittest.TestCase):
                 patch.dict(os.environ, env),
                 patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}),
                 patch("agent_cook.cli.DockerSandboxFactory", return_value=factory),
+                patch("agent_cook.cli.prepare_docker"),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -312,7 +313,9 @@ class WorkspaceCliTest(unittest.TestCase):
             )
             file = root / event["data"]["artifact"]["path"]
             self.assertEqual(file.read_bytes(), source.read_bytes())
-            self.assertIn(str(file), stderr.getvalue())
+            delivered, = root.glob("*-results")
+            self.assertEqual((delivered / "input.txt").read_bytes(), source.read_bytes())
+            self.assertIn(str(delivered), stderr.getvalue())
 
         self.assertEqual(status, 0)
         self.assertEqual(stdout.getvalue(), "Delivered.\n")
