@@ -1,0 +1,14 @@
+{
+  "hooks": [
+    {
+      "event": "after_tool",
+      "tool": "playwright",
+      "script": "hooks/web_preview.py"
+    },
+    {
+      "event": "before_tool",
+      "tool": "submit_results",
+      "script": "hooks/web_preview.py"
+    }
+  ]
+}

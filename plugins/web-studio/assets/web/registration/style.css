@@ -1,0 +1,39 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  color: #192e2a;
+  background: #edf4ef;
+}
+
+body { margin: 0; }
+main {
+  width: min(100% - 3rem, 36rem);
+  margin: clamp(2rem, 10vh, 7rem) auto;
+}
+
+h1 { font-size: clamp(2.5rem, 8vw, 4.5rem); line-height: 1; margin: 0 0 1.5rem; }
+p { line-height: 1.6; }
+form, details {
+  padding: 1.5rem;
+  background: #fff;
+  border: 1px solid #c9d9d0;
+  border-radius: 0.75rem;
+  margin-top: 1rem;
+}
+
+label { display: block; font-weight: 650; margin-bottom: 0.5rem; }
+input, button { box-sizing: border-box; font: inherit; padding: 0.7rem 0.9rem; }
+input { width: 100%; border: 1px solid #9eb1a6; border-radius: 0.35rem; }
+button {
+  margin-top: 1rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: #245c49;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #3a765e; outline-offset: 3px; }
+button:disabled { opacity: 0.65; }
+summary { cursor: pointer; font-weight: 650; }
+#status { margin-bottom: 0; min-height: 1.6em; }

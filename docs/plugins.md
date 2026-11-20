@@ -6,13 +6,14 @@
 {
   "schema_version": 1,
   "task": "用项目数据生成简报，复核关键数字后提交",
+  "model": "provider/chat-model",
   "plugins": ["./plugins/reporting"],
   "skills": ["brief"],
   "mcp_tools": ["project-data/lookup"]
 }
 ```
 
-文件里的相对目录从请求文件的目录解析。用 `--request run.json` 读取任务，模型、沙箱和输入文件仍通过 `--model`、`--sandbox` 和 `--input` 提供。
+文件里的相对目录从请求文件的目录解析。用 `--request run.json` 读取任务，通过 `--sandbox` 和 `--input` 配置沙箱与输入文件。任务可用 `model` 选择对话模型，用 `image_model` 选择生图模型。命令行参数可以覆盖两项选择。[模型配置](../README.md#模型配置)
 
 ```bash
 uv run --project agent agent-cook --sandbox docker --request run.json
@@ -102,3 +103,5 @@ Python 脚本在任务沙箱里执行，工作目录是工作区根目录。从 
 ```
 
 把示例 URL 换成实际服务。任务请求中的 `project-data/lookup` 使用 `mcpServers` 下的服务名 `project-data`，以及服务端公布的工具名 `lookup`。`stdio` 由宿主启动选中的本地服务，支持 `command`、`args`、`env` 和插件内的 `cwd`。运行时在首轮模型调用前发现工具，把文本或结构化结果交回 Agent，并在任务退出时关闭连接。
+
+宿主直接连接 `localhost`、`127.0.0.1` 和 `::1` 上的 HTTP MCP 服务。[本地 MCP 示例](../examples/README.md)

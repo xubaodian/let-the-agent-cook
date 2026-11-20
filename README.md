@@ -4,11 +4,11 @@
 
 ## 本地运行
 
-准备 Python 3.11 或更新版本、`uv` 和 OpenRouter API Key。把模型设为你账户可访问的模型 ID。
+准备 Python 3.11 或更新版本、`uv` 和 OpenRouter API Key。把 `OPENROUTER_MODEL` 设为你要用的 OpenRouter 模型 ID。
 
 ```bash
 export OPENROUTER_API_KEY='your-key'
-export OPENROUTER_MODEL='provider/model'
+export OPENROUTER_MODEL='provider/chat-model'
 uv run --project agent agent-cook '用一句话介绍这个项目。'
 ```
 
@@ -19,6 +19,30 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 使用沙箱时，可以用 `--skills-dir` 配置本机 Skill。模型先接收名称、描述和工作区入口，可用 `ls` 和 `read_file` 按需浏览和读取。[按需读取 Skill](docs/workspace-tools.md#按需读取-skill)
 
 用 `--request run.json` 指定本次任务的插件、Skill 挂载名单和 MCP 工具，也可以直接传 `--plugin`、`--skill` 和 `--mcp-tool`。插件可以声明子 Agent、工具 Hook 和 MCP 服务。[Plugin 和任务扩展](docs/plugins.md)
+
+仓库提供 9 个 Skill 和 `reporting-studio`、`web-studio` 两个示例插件，可以运行经营复盘、活动报名站和双插件交付任务。[示例和运行命令](examples/README.md)
+
+任务可用 `web.enabled` 开启 OpenRouter 搜索和正文抓取，用 `web.browser_origins` 为 Playwright 指定公网来源。[网页检索和浏览器补查](docs/workspace-tools.md#网页检索和浏览器补查)
+
+## 模型配置
+
+要管理模型列表，可以复制示例为 `models.json`，在 `chat.available` 和 `image.available` 填写你可用的模型 ID。两组的 `default` 可填各自列表中的一个 ID，也可保留为 `null`。通过 `--models-config` 加载，`--list-models` 可在没有 API Key 时查看。[models.example.json](models.example.json)
+
+```bash
+uv run --project agent agent-cook --models-config ./models.json --list-models
+uv run --project agent agent-cook --models-config ./models.json '用一句话介绍这个项目。'
+```
+
+两类模型各自按以下优先级选择。
+
+| 优先级 | 对话模型 | 生图模型 |
+|---|---|---|
+| 1 | `--model` | `--image-model` |
+| 2 | 任务 JSON 的 `model` | 任务 JSON 的 `image_model` |
+| 3 | `OPENROUTER_MODEL` | `OPENROUTER_IMAGE_MODEL` |
+| 4 | 配置文件的 `chat.default` | 配置文件的 `image.default` |
+
+也可直接通过命令行、任务 JSON 或环境变量指定 OpenRouter 模型 ID。运行任务需要选择对话模型。在带沙箱的运行中选定生图模型后，Agent 可调用 `generate_image`。两类模型复用同一个 API Key。[生图用法](docs/workspace-tools.md#生图)
 
 ## 执行与上下文
 

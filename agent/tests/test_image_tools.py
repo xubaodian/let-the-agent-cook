@@ -80,8 +80,8 @@ class ImageCliTest(unittest.TestCase):
         client = sdk_client(create)
         client.with_options = Mock(return_value=SimpleNamespace(post=post))
         environment = {
-            "OPENROUTER_API_KEY": "test-key", "OPENROUTER_MODEL": "fixture/chat",
-            "OPENROUTER_IMAGE_MODEL": "fixture/image",
+            "OPENROUTER_API_KEY": "test-key", "OPENROUTER_MODEL": "fixture/environment-chat",
+            "OPENROUTER_IMAGE_MODEL": "fixture/environment-image",
         }
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -89,6 +89,10 @@ class ImageCliTest(unittest.TestCase):
             workspace.mkdir()
             factory = WorkerFixture(workspace)
             trace = root / "run.jsonl"
+            request = root / "request.json"
+            request.write_text(json.dumps({
+                "task": "Deliver an image", "model": "fixture/chat", "image_model": "fixture/image",
+            }), encoding="utf-8")
             with (
                 patch.dict(os.environ, environment),
                 patch.dict(sys.modules, {"openai": sdk_module(client)}),
@@ -96,7 +100,7 @@ class ImageCliTest(unittest.TestCase):
                 redirect_stdout(io.StringIO()),
                 redirect_stderr(io.StringIO()) as stderr,
             ):
-                status = main(["--sandbox", "docker", "--trace", str(trace), "Deliver an image"])
+                status = main(["--sandbox", "docker", "--trace", str(trace), "--request", str(request)])
 
             self.assertEqual(status, 0, stderr.getvalue())
             raw_trace = trace.read_text(encoding="utf-8")

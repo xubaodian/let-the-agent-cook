@@ -65,3 +65,40 @@ class BrowserWorkerTest(unittest.TestCase):
         route.request.url = "https://example.com/script.js"
         context.route.call_args.args[1](route)
         route.abort.assert_called_once()
+
+    def test_public_browser_uses_proxy_and_limits_requests_to_reading(self):
+        from agent_cook.sandbox.worker.browser import playwright_public
+        from agent_cook.sandbox.worker.workspace import Workspace
+
+        api = MagicMock()
+        pw = api.sync_playwright.return_value.__enter__.return_value
+        browser = pw.chromium.launch.return_value
+        context = browser.new_context.return_value
+        page = context.new_page.return_value
+        page.url = "https://docs.example.com/article"
+        page.title.return_value = "Article"
+        page.goto.return_value.status = 200
+        page.locator.return_value.inner_text.return_value = "Evidence"
+        api.Error = RuntimeError
+
+        with TemporaryDirectory() as directory, patch.dict(sys.modules, {"playwright.sync_api": api}):
+            result = playwright_public(Workspace(Path(directory)), page.url, ["https://docs.example.com"])
+
+        self.assertEqual(result["text"], "Evidence")
+        self.assertEqual(result["url"], page.url)
+        self.assertTrue(pw.chromium.launch.call_args.kwargs["proxy"]["server"].startswith("http://127.0.0.1:"))
+        self.assertEqual(pw.chromium.launch.call_args.kwargs["proxy"]["bypass"], "<-loopback>")
+        route_request = context.route.call_args.args[1]
+        for url, method, allowed in (
+            (page.url, "GET", True),
+            (page.url, "POST", False),
+            ("https://other.example.com/file.js", "GET", False),
+        ):
+            route = MagicMock()
+            route.request.url, route.request.method = url, method
+            route_request(route)
+            self.assertEqual(route.continue_.called, allowed)
+            self.assertEqual(route.abort.called, not allowed)
+        socket_route = MagicMock()
+        context.route_web_socket.call_args.args[1](socket_route)
+        socket_route.close.assert_called_once()

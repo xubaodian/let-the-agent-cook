@@ -14,6 +14,7 @@ class AgentSpec:
     timeout_seconds: float = 120.0
     context_policy: ContextPolicy = DEFAULT_CONTEXT_POLICY
     require_submission: bool | None = None
+    web_enabled: bool = False
 
     def __post_init__(self) -> None:
         if not self.model.strip():

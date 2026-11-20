@@ -1,0 +1,38 @@
+[
+  {
+    "id": "registration-rules",
+    "title": "Field Workshop registration rules",
+    "locale": "en",
+    "version": 2,
+    "current": true,
+    "source": "field-workshop/registration-rules",
+    "excerpt": "Registration closes on 18 October 2026 at 17:00 SGT. Each email address can reserve one seat."
+  },
+  {
+    "id": "registration-rules",
+    "title": "Field Workshop registration rules",
+    "locale": "en",
+    "version": 1,
+    "current": false,
+    "source": "field-workshop/registration-rules",
+    "excerpt": "Registration closes on 15 October 2026 at 17:00 SGT. Each email address can reserve two seats."
+  },
+  {
+    "id": "registration-faq",
+    "title": "Field Workshop registration FAQ",
+    "locale": "en",
+    "version": 1,
+    "current": true,
+    "source": "field-workshop/registration-faq",
+    "excerpt": "A successful registration displays a confirmation. A full session displays an error and leaves the form available."
+  },
+  {
+    "id": "review-metrics",
+    "title": "Metode ringkasan GMV dan benchmark",
+    "locale": "id-ID",
+    "version": 1,
+    "current": true,
+    "source": "weekly-review/metric-method",
+    "excerpt": "GMV tercatat menjumlahkan pesanan dengan nilai yang tersedia. Benchmark nilai pesanan rata-rata berlaku untuk kategori toko pada pasar dan minggu yang sama."
+  }
+]
