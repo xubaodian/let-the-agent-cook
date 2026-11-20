@@ -1,0 +1,14 @@
+FROM python:3.12-slim-bookworm
+
+WORKDIR /opt/agent
+COPY pyproject.toml ./
+COPY src/ ./src/
+RUN python -m pip install --no-cache-dir '.[server,mcp,e2b]' \
+    && groupadd --gid 10001 cook \
+    && useradd --uid 10001 --gid cook --create-home cook \
+    && install -d -o cook -g cook /data
+
+USER cook
+WORKDIR /data
+EXPOSE 8000
+ENTRYPOINT ["agent-cook", "serve", "--host", "0.0.0.0", "--data-dir", "/data"]

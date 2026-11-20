@@ -4,27 +4,23 @@
 
 | 任务 | Plugin 与 MCP | 交付与验收 |
 |---|---|---|
+| [快速开始](quickstart/run.json) | 工作区工具 | HTML 与浏览器截图。 |
 | [店铺周度复盘](shop-review/run.json) | `reporting-studio` 通过 stdio 连接 `fixture-data/describe_dataset` 和 `fixture-data/query_rows` | Excel、Markdown 简报、印尼语 PPTX 和指标 JSON。核对分页、重复订单、缺失金额及类目基准。 |
 | [活动报名站](event-registration/run.json) | `web-studio` 通过 Streamable HTTP 连接 `reference-library/search` | 页面、活动内容、模拟接口和截图。验证空表单、满员与成功状态，以及改版后的重新截图。 |
 | [双插件复盘](combined-review/run.json) | 两个 Plugin，选择 `fixture-data/query_rows` 与 `reference-library/search` | PPTX 和可筛选站点。对齐两份指标 JSON、验证筛选结果、复用 checkpoint 前的文件，并一起提交。 |
 
 ## 运行
 
-从仓库根目录构建沙箱镜像。镜像包含浏览器、Excel 和 PowerPoint 依赖。
+在仓库根目录配置 OpenRouter 后，用 `./cook demo` 构建工作区镜像并运行样例。[本地运行](../README.md#本地运行)
 
 ```bash
-docker build -f sandbox/Dockerfile -t agent-cook-sandbox:local .
-uv run --project agent --extra mcp agent-cook --sandbox docker \
-  --max-turns 24 --timeout 300 --request examples/shop-review/run.json
+./cook demo
+./cook demo shop-review
+./cook demo event-registration
+./cook demo combined-review
 ```
 
-报名站和双插件示例需要先在一个终端启动资料 MCP。
-
-```bash
-uv run --project agent --extra mcp python plugins/web-studio/mcp/server.py
-```
-
-在另一个终端使用同一条 `agent-cook` 命令，将请求文件改为 `examples/event-registration/run.json` 或 `examples/combined-review/run.json`。CLI 使用 [README](../README.md#本地运行) 中的 OpenRouter 设置。`fixture-data` 由 CLI 自动启动，`reference-library` 在宿主的 `127.0.0.1:8766` 上提供资料，报名模拟接口随 Playwright 在任务沙箱内启动。
+`fixture-data` 由执行入口自动启动。报名站和双插件的样例用宿主 `127.0.0.1:8766` 上的 `reference-library`，按需启动进程并在退出时收回。报名模拟接口随 Playwright 在任务沙箱内启动。
 
 提交报告时，`reporting-studio` 根据 `out/report/validation.json` 核对交付文件和检查结果。提交站点时，`web-studio` 核对一张通过断言的截图和站点文件版本。页面、样式或数据更新后，重新预览即可生成新凭据。两个 Hook 均按提交路径生效。
 

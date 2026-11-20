@@ -88,15 +88,27 @@ uv run --project agent agent-cook --sandbox docker --timeout 240 \
   '生成一张 16:9 的深蓝色城市夜景，用 submit_results 交付图片。'
 ```
 
+## 沙箱内置依赖
+
+| 用途 | 预装内容 |
+|---|---|
+| 执行与浏览器 | Python 3.12、Node.js 22、npm、npx、Playwright Chromium |
+| Excel | openpyxl、XlsxWriter、pandas |
+| PPTX、Word 和 PDF | python-pptx、python-docx、pypdf |
+| 图片和绘图 | Pillow、Matplotlib |
+| 数组、统计和线性代数 | NumPy、SciPy |
+
+Python 版本清单在 [sandbox/requirements.txt](../sandbox/requirements.txt)。本地 Docker 镜像和基于它构建的 E2B 模板提供同一套依赖。
+
 ## 本地 Docker
 
-在仓库根目录构建镜像。镜像包含 Python、Node.js 和 Playwright Chromium。
+在仓库根目录用 `./cook setup --docker` 创建或更新工作区镜像。也可单独构建镜像，再把镜像名交给 `--docker-image`。
 
 ```bash
 docker build -f sandbox/Dockerfile -t agent-cook-sandbox:local .
 
 export OPENROUTER_API_KEY='your-key'
-uv run --project agent agent-cook --sandbox docker --max-turns 16 --timeout 180 \
+uv run --project agent agent-cook exec --sandbox docker --max-turns 16 --timeout 180 \
   --model 'provider/chat-model' \
   '在工作区写一个计数器网页，用 playwright 点击按钮并截屏。用 submit_results 交付网页和截图。'
 ```

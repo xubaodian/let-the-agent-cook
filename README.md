@@ -1,24 +1,35 @@
 # Let the Agent Cook
 
-一个用 Python 写的 Agent Runtime。当前入口接收一条任务，通过 OpenRouter 返回答复，并写出可供回放的 JSONL 执行记录。
+一个用 Python 写的 Agent Runtime，提供本地交互 CLI 和常驻 HTTP 服务。两个入口都使用 OpenRouter，按任务执行并记录可回放的事件。
 
 ## 本地运行
 
-准备 Python 3.11 或更新版本、`uv` 和 OpenRouter API Key。把 `OPENROUTER_MODEL` 设为你要用的 OpenRouter 模型 ID。
+在仓库根目录运行 `./cook setup`。`uv` 准备 Python 3.12 和项目依赖，并创建首次使用的配置文件。在 `.env` 填写 `OPENROUTER_API_KEY` 和你选择的 `OPENROUTER_MODEL` 后即可启动。
 
 ```bash
-export OPENROUTER_API_KEY='your-key'
-export OPENROUTER_MODEL='provider/chat-model'
-uv run --project agent agent-cook '用一句话介绍这个项目。'
+./cook setup
+./cook
+./cook run '用一句话介绍这个项目。'
 ```
 
-标准输出是模型答复，执行记录的位置打印到标准错误。默认路径是 `.agent-cook/runs/<run_id>.jsonl`。可以用 `--trace` 选择一个新的输出文件。CLI 的工具注册表默认为空，运行文本任务时也能产出执行事件。
+`./cook doctor` 检查依赖、模型配置和已选沙箱。也可以在仓库根目录用 `uv tool install --python 3.12 ./agent` 安装独立 CLI，然后从任意目录运行 `agent-cook`。独立安装使用当前进程的环境变量。通过 `-C` 指定工作目录和相对路径的基准。
 
-用 `--sandbox docker` 或 `--sandbox e2b` 启用工作区工具。工具清单、分层和运行命令见 [工作区工具与沙箱](docs/workspace-tools.md)。
+| 命令 | 用法 |
+|---|---|
+| `agent-cook` | 启动交互终端。可用 `@文件路径` 引用输入，`/model` 选模型，`/sandbox` 选工作区，`/help` 查看命令。 |
+| `agent-cook exec "任务"` | 单次执行。用 `--input` 可重复选择文件，用 `exec -` 从 stdin 读取任务。 |
+| `agent-cook resume --last` | 继续当前工作目录最近的会话，也可以用记录中的会话 ID。 |
+| `agent-cook serve` | 启动常驻 HTTP API。[服务端使用方式](docs/server.md) |
+
+交互时按 `Ctrl+C` 取消当前 Run。成功的 Run 保存对话、输入快照和最新交付的文件，续接时将它们重新放入工作区。用 `/new` 另开会话。已存在的 `agent-cook "任务"` 也是单次入口。
+
+`exec` 默认把最终答复放在 stdout。用 `--json` 时 stdout 输出 JSONL 事件。执行记录和产物路径打印到 stderr，默认保存在工作目录的 `.agent-cook/runs/`。
+
+文本任务可直接运行。需要工作区工具时使用 `--sandbox docker` 或 `--sandbox e2b`，也可设置 `AGENT_COOK_SANDBOX`。本地镜像可用 `./cook setup --docker` 准备。用 `./cook demo` 运行生成 HTML 和截图的快速示例。[工作区工具与沙箱](docs/workspace-tools.md)
 
 使用沙箱时，可以用 `--skills-dir` 配置本机 Skill。模型先接收名称、描述和工作区入口，可用 `ls` 和 `read_file` 按需浏览和读取。[按需读取 Skill](docs/workspace-tools.md#按需读取-skill)
 
-用 `--request run.json` 指定本次任务的插件、Skill 挂载名单和 MCP 工具，也可以直接传 `--plugin`、`--skill` 和 `--mcp-tool`。插件可以声明子 Agent、工具 Hook 和 MCP 服务。[Plugin 和任务扩展](docs/plugins.md)
+用 `exec --request run.json` 指定本次任务的插件、Skill 挂载名单和 MCP 工具，也可以直接传 `--plugin`、`--skill` 和 `--mcp-tool`。插件可以声明子 Agent、工具 Hook 和 MCP 服务。[Plugin 和任务扩展](docs/plugins.md)
 
 仓库提供 9 个 Skill 和 `reporting-studio`、`web-studio` 两个示例插件，可以运行经营复盘、活动报名站和双插件交付任务。[示例和运行命令](examples/README.md)
 
@@ -58,14 +69,16 @@ uv run --project agent agent-cook --models-config ./models.json '用一句话介
 
 | 路径 | 职责 |
 |---|---|
-| `cli.py` | 读取配置，装配 OpenRouter 客户端和本地记录输出。 |
+| `cli.py`、`terminal.py` | 本地交互、命令行配置和输出。 |
+| `runner.py` | 为 CLI 和 Server 组装模型、工具与沙箱，执行单次 Run。 |
+| `server/` | HTTP API、持久化任务队列和 SSE。 |
 | `core/` | `run.py` 管 Run 的预算、结束状态和任务资源。`loop.py` 推进模型和工具轮次。 |
 | `context/` | 管理执行提示词、输入预算、上下文组装和 checkpoint 压缩。 |
 | `model/` | `client.py` 定义模型接口。`openrouter.py` 负责 Chat Completions 的消息和工具调用格式。 |
 | `tools/` | `spec.py` 和 `registry.py` 管工具契约、授权和分派。`workspace.py` 注册工作区工具，`images.py` 接入生图，`artifacts.py` 导出交付文件。 |
 | `extensions/` | 加载插件清单、Skill 包、子 Agent 定义、工具 Hook 和 MCP 配置。 |
 | `sandbox/` | `interface.py` 定义任务环境接口。`docker.py` 和 `e2b.py` 管各自的生命周期和传输。`worker/` 在沙箱内执行共用操作。 |
-| `state/` | 保存单次 Run 的原始消息、工具调用关联和当前 checkpoint。 |
+| `state/` | 管理消息、checkpoint 和本地交互会话的输入与产物快照。 |
 | `protocol/` | 定义任务入口、RunEvent、ArtifactRef 和 UiAttachment，供宿主接入和回放读取。 |
 | `events/` | 为执行事件编号并写入 JSONL。 |
 
