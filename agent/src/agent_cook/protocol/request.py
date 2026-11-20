@@ -20,6 +20,8 @@ _REQUEST = Draft202012Validator({
     "properties": {
         "schema_version": {"type": "integer", "const": 1},
         "task": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "pattern": r"\S"},
+        "image_model": {"type": "string", "pattern": r"\S"},
         "plugins": _STRINGS,
         "skill_directories": _STRINGS,
         "skills": {"oneOf": [_STRINGS, _LEGACY_SKILLS]},
@@ -54,6 +56,8 @@ class RunRequest:
     mounted_skills: tuple[str, ...] | None = None
     mcp_tools: tuple[str, ...] | None = None
     web: WebOptions = WebOptions()
+    model: str | None = None
+    image_model: str | None = None
 
     def __post_init__(self) -> None:
         if not self.task.strip():
@@ -87,4 +91,6 @@ class RunRequest:
             mounted_skills=tuple(skills) if skills is not None else None,
             mcp_tools=tuple(data["mcp_tools"]) if "mcp_tools" in data else None,
             web=WebOptions(web.get("enabled", False), tuple(web.get("browser_origins", ()))),
+            model=data.get("model"),
+            image_model=data.get("image_model"),
         )

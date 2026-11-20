@@ -26,3 +26,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "agent_cook.context" = ["execution_prompt.md"]
+"agent_cook.model" = ["models.json"]

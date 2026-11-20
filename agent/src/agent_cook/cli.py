@@ -1,9 +1,10 @@
 import argparse
 import asyncio
+import json
 import os
 import sys
 from contextlib import AsyncExitStack
-from dataclasses import replace
+from dataclasses import asdict, replace
 from functools import partial
 from math import ceil
 from pathlib import Path
@@ -16,6 +17,7 @@ from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.events.journal import RunEvents, write_jsonl
 from agent_cook.extensions.hooks import HookRunner
 from agent_cook.extensions.mcp import register_mcp_tools
+from agent_cook.model.catalog import ModelCatalog
 from agent_cook.model.openrouter import OPENROUTER_BASE_URL, OpenRouterModel
 from agent_cook.model.openrouter_images import OpenRouterImageGenerator
 from agent_cook.protocol.request import RunRequest, WebOptions
@@ -33,6 +35,14 @@ from agent_cook.tools.workspace import workspace_tools
 if TYPE_CHECKING:
     from agent_cook.extensions.plugins import Plugin
     from agent_cook.extensions.skills import SkillCatalog
+
+
+def _select_model(
+    override: str | None, requested: str | None, env_name: str, default: str | None,
+) -> str | None:
+    if override is not None:
+        return override.strip() or None
+    return (requested or "").strip() or os.environ.get(env_name, "").strip() or default
 
 
 def _input_files(paths: list[Path]) -> dict[str, bytes]:
@@ -131,11 +141,11 @@ async def _run(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one task with the OpenRouter model you configure.")
     parser.add_argument("task", nargs="?", help="Text to send to the agent")
-    parser.add_argument("--request", type=Path, help="Read the task and enabled extensions from a JSON request")
-    parser.add_argument(
-        "--model", default=os.environ.get("OPENROUTER_MODEL"), help="OpenRouter model ID"
-    )
-    parser.add_argument("--image-model", help="OpenRouter Image API model ID (or set OPENROUTER_IMAGE_MODEL)")
+    parser.add_argument("--request", type=Path, help="Read the task, model choices and extensions from a JSON request")
+    parser.add_argument("--models-config", type=Path, help="Use a custom JSON model catalog")
+    parser.add_argument("--list-models", action="store_true", help="Print the configured chat and image models as JSON")
+    parser.add_argument("--model", help="Chat model ID (or set OPENROUTER_MODEL)")
+    parser.add_argument("--image-model", help="Image API model ID (or set OPENROUTER_IMAGE_MODEL)")
     parser.add_argument("--trace", type=Path, help="Write the run to a new JSONL file at this path")
     parser.add_argument("--sandbox", choices=("docker", "e2b"), help="Enable task workspace tools")
     parser.add_argument("--docker-image", default=DEFAULT_DOCKER_IMAGE, help="Prebuilt local sandbox image")
@@ -155,11 +165,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=120, help="Run time limit in seconds")
     args = parser.parse_args(argv)
 
+    try:
+        catalog = ModelCatalog.load(args.models_config)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
+    if args.list_models:
+        print(json.dumps(asdict(catalog), indent=2))
+        return 0
+
     api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not api_key:
         parser.error("Set OPENROUTER_API_KEY before running the agent.")
-    if not args.model or not args.model.strip():
-        parser.error("Set OPENROUTER_MODEL or pass --model with an OpenRouter model ID.")
     if args.request is not None and (
         args.task is not None or args.plugin or args.skills_dir or args.skill or args.mcp_tool
     ):
@@ -171,17 +187,22 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--input and --sandbox-network require --sandbox.")
     if args.skills_dir and args.sandbox is None:
         parser.error("--skills-dir requires --sandbox.")
-    if args.image_model is not None and args.sandbox is None:
-        parser.error("--image-model requires --sandbox.")
-    image_model = args.image_model if args.image_model is not None else os.environ.get("OPENROUTER_IMAGE_MODEL", "")
     try:
         request = RunRequest.from_file(args.request) if args.request is not None else RunRequest(
             task=args.task, plugins=tuple(args.plugin), skill_directories=tuple(args.skills_dir),
             mounted_skills=tuple(args.skill) if args.skill is not None else None,
             mcp_tools=tuple(args.mcp_tool) if args.mcp_tool is not None else None,
         )
+        chat_model = _select_model(args.model, request.model, "OPENROUTER_MODEL", catalog.chat.default)
+        if not chat_model:
+            raise ValueError("Set OPENROUTER_MODEL or pass --model with an OpenRouter model ID.")
+        if (args.image_model is not None or request.image_model is not None) and args.sandbox is None:
+            raise ValueError("Selecting an image model for the task requires --sandbox.")
+        image_model = _select_model(
+            args.image_model, request.image_model, "OPENROUTER_IMAGE_MODEL", catalog.image.default,
+        )
         spec = AgentSpec(
-            model=args.model.strip(), max_model_turns=args.max_turns, timeout_seconds=args.timeout,
+            model=chat_model, max_model_turns=args.max_turns, timeout_seconds=args.timeout,
             context_policy=replace(DEFAULT_CONTEXT_POLICY, context_window=args.context_window),
         )
         if request.web.browser_origins and args.sandbox is None:
@@ -228,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = asyncio.run(_run(
             spec, request.task, api_key, trace_path, run_id, factory, inputs,
-            image_model=image_model.strip() or None, skills=skills, plugins=plugins,
+            image_model=image_model, skills=skills, plugins=plugins,
             mcp_tools=request.mcp_tools, web=request.web, browser_factory=browser_factory,
         ))
     except KeyboardInterrupt:

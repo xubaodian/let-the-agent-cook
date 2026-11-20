@@ -70,7 +70,7 @@ uv run --project agent agent-cook --sandbox docker --skills-dir /path/to/skills 
 
 ## 生图
 
-使用沙箱时，设置 `OPENROUTER_IMAGE_MODEL` 或传 `--image-model` 即可启用 `generate_image`。选择支持 OpenRouter Image API 的模型。对话和生图复用 `OPENROUTER_API_KEY`，由主进程分别调用对应接口。[OpenRouter Image API](https://openrouter.ai/blog/tutorials/image-generation/)
+使用沙箱时，可用 `--image-model` 或任务 JSON 的 `image_model` 选择生图模型并启用 `generate_image`。也可通过 `OPENROUTER_IMAGE_MODEL` 或模型列表中的 `image.default` 配置默认生图模型。选择支持 OpenRouter Image API 的模型。对话和生图复用 `OPENROUTER_API_KEY`，由主进程分别调用对应接口。[模型配置](../README.md#模型配置) · [OpenRouter Image API](https://openrouter.ai/blog/tutorials/image-generation/)
 
 | 工具参数 | 用法 |
 |---|---|
@@ -82,8 +82,8 @@ uv run --project agent agent-cook --sandbox docker --skills-dir /path/to/skills 
 比例和分辨率沿用所选模型的默认值，除非调用时显式指定。工具用实际图片格式确定扩展名，支持 PNG、JPEG 和 WebP，单张图片最多 16 MiB。可以用返回的 `path` 将图片放进网页，也可以用 `submit_results` 导出。
 
 ```bash
-export OPENROUTER_IMAGE_MODEL='bytedance-seed/seedream-4.5'
 uv run --project agent agent-cook --sandbox docker --timeout 240 \
+  --image-model bytedance-seed/seedream-4.5 \
   '生成一张 16:9 的深蓝色城市夜景，用 submit_results 交付图片。'
 ```
 
@@ -95,7 +95,6 @@ uv run --project agent agent-cook --sandbox docker --timeout 240 \
 docker build -f sandbox/Dockerfile -t agent-cook-sandbox:local .
 
 export OPENROUTER_API_KEY='your-key'
-export OPENROUTER_MODEL='provider/model'
 uv run --project agent agent-cook --sandbox docker --max-turns 16 --timeout 180 \
   '在工作区写一个计数器网页，用 playwright 点击按钮并截屏。用 submit_results 交付网页和截图。'
 ```
