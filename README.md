@@ -20,7 +20,7 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 
 用 `--request run.json` 指定本次任务的插件、Skill 挂载名单和 MCP 工具，也可以直接传 `--plugin`、`--skill` 和 `--mcp-tool`。插件可以声明子 Agent、工具 Hook 和 MCP 服务。[Plugin 和任务扩展](docs/plugins.md)
 
-仓库提供 10 个 Skill 和 `reporting-studio`、`web-studio` 两个示例插件，可以运行经营复盘、活动报名站和双插件交付任务。[示例和运行命令](examples/README.md)
+仓库提供 9 个 Skill 和 `reporting-studio`、`web-studio` 两个示例插件，可以运行经营复盘、活动报名站和双插件交付任务。[示例和运行命令](examples/README.md)
 
 ## 执行与上下文
 

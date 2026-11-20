@@ -105,12 +105,12 @@ class ExamplePluginsTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
 
-    def test_catalog_discovers_all_ten_skills_without_package_collisions(self):
+    def test_catalog_discovers_bundled_skills_without_package_collisions(self):
         request = RunRequest.from_file(ROOT / "examples/combined-review/run.json")
         plugins = load_plugins(request.plugins)
         catalog = SkillCatalog((*request.skill_directories, *(plugin.skills_dir for plugin in plugins)))
         self.assertEqual(set(catalog.names), {
-            "data-analysis", "chart-design", "research-synthesis", "i18n-review",
+            "data-analysis", "research-synthesis", "i18n-review",
             "spreadsheet", "brief", "pptx", "static-site", "browser-qa", "image-assets",
         })
         staged = catalog.workspace_files({}, extra_trees=tuple(tree for plugin in plugins for tree in plugin.files))

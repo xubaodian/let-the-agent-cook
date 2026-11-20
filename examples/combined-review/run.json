@@ -3,6 +3,6 @@
   "task": "Build an editable Indonesian PowerPoint and a filterable web review for market ID from 2026-10-05 through 2026-10-11. Page through fixture-data/query_rows for sales and category_benchmarks and save the two arrays in inputs/. Run assets/reporting/build_review.py with --sales, --benchmarks, and --deck-only. Use reference-library/search to find the Indonesian GMV methodology. Copy assets/web/dashboard/index.html into out/site/, copy the report metrics.json next to it, and save the sourced methodology hit as out/site/reference.json. Use the same metrics for the deck and site. Verify the page total and a category filter, capture a current preview.png, and submit the report and site together. Keep the data files and paths available if the run compacts its context.",
   "plugins": ["../../plugins/reporting-studio", "../../plugins/web-studio"],
   "skill_directories": ["../../skills"],
-  "skills": ["data-analysis", "chart-design", "research-synthesis", "i18n-review", "pptx", "static-site", "browser-qa"],
+  "skills": ["data-analysis", "research-synthesis", "i18n-review", "pptx", "static-site", "browser-qa"],
   "mcp_tools": ["fixture-data/query_rows", "reference-library/search"]
 }
