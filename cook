@@ -8,10 +8,7 @@ if ! command -v uv >/dev/null; then
     exit 1
 fi
 
-project=(--project "$root/agent" --extra mcp --extra e2b)
-if [[ -f "$root/agent/uv.lock" ]]; then
-    project+=(--locked)
-fi
+project=(--project "$root/agent" --locked --extra mcp --extra e2b)
 
 build_workspace() {
     if ! docker info >/dev/null 2>&1; then

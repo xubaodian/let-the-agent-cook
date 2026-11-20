@@ -4,7 +4,7 @@
 
 ## 本地运行
 
-在仓库根目录运行 `./cook setup`。`uv` 准备 Python 3.12 和项目依赖，并创建首次使用的配置文件。在 `.env` 填写 `OPENROUTER_API_KEY` 和你选择的 `OPENROUTER_MODEL` 后即可启动。
+在仓库根目录运行 `./cook setup`。`uv` 准备 Python 3.12，按 `agent/uv.lock` 安装项目依赖，并创建首次使用的配置文件。在 `.env` 填写 `OPENROUTER_API_KEY` 和你选择的 `OPENROUTER_MODEL` 后即可启动。
 
 ```bash
 ./cook setup

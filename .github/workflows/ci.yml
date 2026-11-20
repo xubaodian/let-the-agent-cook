@@ -15,17 +15,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - name: Install development dependencies
-        run: |
-          if test -f agent/uv.lock; then
-            uv sync --project agent --locked --all-extras
-          else
-            uv sync --project agent --all-extras
-          fi
-      - uses: actions/upload-artifact@v7
-        with:
-          name: agent-uv-lock
-          path: agent/uv.lock
-          retention-days: 3
+        run: uv sync --project agent --locked --all-extras
       - name: Test the CLI, service and runtime
         run: uv run --project agent --locked --all-extras python -m unittest discover -s agent/tests -v
       - name: Verify the installed CLI

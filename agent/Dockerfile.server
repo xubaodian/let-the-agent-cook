@@ -1,9 +1,15 @@
+FROM ghcr.io/astral-sh/uv:0.13.9 AS uv
 FROM python:3.12-slim-bookworm
 
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy \
+    PATH=/opt/agent/.venv/bin:$PATH
+
 WORKDIR /opt/agent
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
-RUN python -m pip install --no-cache-dir '.[server,mcp,e2b]' \
+RUN uv sync --locked --no-dev --no-editable --extra server --extra mcp --extra e2b \
     && groupadd --gid 10001 cook \
     && useradd --uid 10001 --gid cook --create-home cook \
     && install -d -o cook -g cook /data
