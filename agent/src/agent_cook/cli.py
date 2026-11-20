@@ -413,7 +413,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
             args.session_model = spec.model
             args.trace = None
             pending.clear()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             print("Run cancelled.", file=sys.stderr)
         except EOFError:
             return 0
@@ -482,6 +482,10 @@ def _serve(args, catalog: ModelCatalog) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if sys.platform == "win32":
+        for stream in (sys.stdin, sys.stdout, sys.stderr):
+            if not stream.isatty() and (configure := getattr(stream, "reconfigure", None)):
+                configure(encoding="utf-8")
     words = list(sys.argv[1:] if argv is None else argv)
     mode = words.pop(0) if words and words[0] in ("exec", "resume", "doctor", "serve") else "local"
     parser = _parser(mode)
@@ -534,7 +538,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         observer = partial(write_jsonl, sys.stdout) if args.json else None
         _execute(args, directory, prepared, request.task, api_key, inputs, observer=observer)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         print("Run cancelled.", file=sys.stderr)
         return 130
     except Exception as error:

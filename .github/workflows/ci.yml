@@ -33,7 +33,15 @@ jobs:
         run: docker build -f sandbox/Dockerfile -t agent-cook-sandbox:local .
       - name: Exercise packaged runtimes, files and Chromium
         run: docker run --rm -i --network none --shm-size=128m agent-cook-sandbox:local python - < sandbox/smoke.py
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Exercise CLI folder imports and submissions in Docker
+        env:
+          AGENT_COOK_TEST_DOCKER_IMAGE: agent-cook-sandbox:local
+        run: uv run --project agent --locked python -m unittest discover -s agent/tests -p test_docker_delivery.py -v
       - name: Build the service image
         run: docker build -f agent/Dockerfile.server -t agent-cook-server:local agent
       - name: Verify the packaged service entry point
         run: docker run --rm agent-cook-server:local --help
+
+  installers:
+    uses: ./.github/workflows/installers.yml
