@@ -67,7 +67,8 @@ class ContextCompactionTest(unittest.IsolatedAsyncioTestCase):
         records = []
 
         result = await run_agent(
-            AgentSpec("fixture/model", tool_names=(_FIXTURE.name,), max_model_turns=5), "Build the signup page.",
+            AgentSpec("fixture/model", tool_names=(_FIXTURE.name,), max_model_turns=5, web_enabled=True),
+            "Build the signup page.",
             model=model, tools=registry, events=RunEvents(records.append),
         )
 
@@ -78,6 +79,9 @@ class ContextCompactionTest(unittest.IsolatedAsyncioTestCase):
         second_summary = json.loads(sent[5]["messages"][1].content)
         self.assertEqual(sent[3]["tools"], ())
         self.assertEqual(sent[5]["tools"], ())
+        self.assertNotIn("web_enabled", sent[3])
+        self.assertNotIn("web_enabled", sent[5])
+        self.assertTrue(all(sent[index]["web_enabled"] for index in (0, 1, 2, 4, 6)))
         self.assertIsNone(first_summary["previous_checkpoint"])
         self.assertEqual(first_summary["completed_history"][-1]["tool_call_id"], "call-1")
         self.assertTrue(first_summary["completed_history"][-1]["tool_error"])

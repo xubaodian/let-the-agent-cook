@@ -55,14 +55,13 @@ class WorkerSandbox:
             truncated=result["truncated"],
         )
 
-    async def put_file(self, path: str, content: bytes) -> None:
+    async def put_file(self, path: str, content: bytes, *, overwrite: bool = False) -> None:
         if len(content) > MAX_FILE_BYTES:
             raise SandboxError("The input file exceeds the per-file transfer limit.")
-        await self.request(
-            "upload",
-            {"path": workspace_path(path), "content": base64.b64encode(content).decode("ascii")},
-            timeout_seconds=30,
-        )
+        arguments: dict[str, Any] = {"path": workspace_path(path), "content": base64.b64encode(content).decode("ascii")}
+        if overwrite:
+            arguments["overwrite"] = True
+        await self.request("upload", arguments, timeout_seconds=30)
 
     async def get_file(self, path: str) -> bytes:
         result = await self.request("download", {"path": workspace_path(path)}, timeout_seconds=30)

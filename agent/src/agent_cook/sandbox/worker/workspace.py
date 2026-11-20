@@ -267,9 +267,9 @@ def _matches_glob(path: str, glob: str) -> bool:
     return fnmatchcase(path, glob) or (glob.startswith("**/") and fnmatchcase(path, glob[3:]))
 
 
-def upload(workspace: Workspace, path: str, content: str) -> dict[str, Any]:
+def upload(workspace: Workspace, path: str, content: str, *, overwrite: bool = False) -> dict[str, Any]:
     data = base64.b64decode(content, validate=True)
-    workspace.write_bytes(path, data, overwrite=False)
+    workspace.write_bytes(path, data, overwrite=overwrite)
     return {"bytes": len(data)}
 
 

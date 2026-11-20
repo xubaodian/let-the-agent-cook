@@ -22,6 +22,8 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 
 仓库提供 9 个 Skill 和 `reporting-studio`、`web-studio` 两个示例插件，可以运行经营复盘、活动报名站和双插件交付任务。[示例和运行命令](examples/README.md)
 
+任务可用 `web.enabled` 开启 OpenRouter 搜索和正文抓取，用 `web.browser_origins` 为 Playwright 指定公网来源。[网页检索和浏览器补查](docs/workspace-tools.md#网页检索和浏览器补查)
+
 ## 执行与上下文
 
 公共执行提示词指导 Agent 按用户目标完成脚本、文件和工具操作，按需读取 Skill，验证并交付结果。工作区 Run 以主 Agent 的 `submit_results` 回执交付文件。Runtime 会核对已提交文件的内容，文件变更后需要提交当前版本才可完成。[公共执行提示词](agent/src/agent_cook/context/execution_prompt.md)

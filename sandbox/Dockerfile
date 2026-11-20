@@ -17,7 +17,7 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && install -d -o cook -g cook /workspace
 
 COPY agent/src/agent_cook/__init__.py /usr/local/lib/python3.12/site-packages/agent_cook/__init__.py
-COPY agent/src/agent_cook/sandbox/__init__.py agent/src/agent_cook/sandbox/limits.py agent/src/agent_cook/sandbox/paths.py /usr/local/lib/python3.12/site-packages/agent_cook/sandbox/
+COPY agent/src/agent_cook/sandbox/__init__.py agent/src/agent_cook/sandbox/limits.py agent/src/agent_cook/sandbox/paths.py agent/src/agent_cook/sandbox/urls.py /usr/local/lib/python3.12/site-packages/agent_cook/sandbox/
 COPY agent/src/agent_cook/sandbox/worker/*.py /usr/local/lib/python3.12/site-packages/agent_cook/sandbox/worker/
 
 ENV PATH=/home/cook/.local/bin:$PATH

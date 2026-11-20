@@ -25,7 +25,7 @@ flowchart TD
 | `write_file` | 原子写入整份 UTF-8 文本，按需创建父目录。`overwrite` 可以控制覆盖。 |
 | `copy_file` | 复制工作区里的单个文件，支持二进制，默认保留已有目标。 |
 | `run_command` | 用 `argv`、`cwd` 和 `timeout_seconds` 运行 Python、Node.js 或其他镜像内程序。返回退出码、stdout、stderr、超时与截断状态。 |
-| `playwright` | 预览工作区 HTML 或沙箱内的环回 URL。可用 `server_argv` 启动临时服务，执行点击、填值、按键、文本断言并保存 PNG。 |
+| `playwright` | 预览工作区 HTML 或沙箱内的环回 URL，也可访问任务配置的公网 HTTPS 页面。可执行点击、填值、按键、文本断言并保存 PNG。预览本地服务时可用 `server_argv` 启动临时服务。 |
 | `generate_image` | 用配置的 OpenRouter 图片模型生成一张图，返回工作区路径、格式、字节数和模型 ID。 |
 | `submit_results` | 批量导出指定文件，返回 `ArtifactRef` 并记录产物和 UI 附件。随后 Agent 可以继续总结结果。 |
 
@@ -34,6 +34,24 @@ flowchart TD
 常规文件操作使用工作区相对路径。`playwright` 适合验证 Agent 生成的本地网页和启动的测试服务器，截图写回工作区。用 `submit_results` 选出交付文件，批次在全部读取成功后才出现在产物目录中。
 
 `ls` 的 `directory` 默认为 `.`。用 `kind=file` 或 `kind=directory` 筛选类型，用 `recursive=true` 查看子目录。结果按路径排序。下一页沿用原参数，将 `next_cursor` 传入 `cursor`。如果 `truncated=true` 且 `next_cursor` 为空，可以缩小目录范围继续查找。
+
+## 网页检索和浏览器补查
+
+在任务 JSON 中设置 `web.enabled`，模型可以用同一个 `OPENROUTER_API_KEY` 搜索网页和抓取指定 URL。OpenRouter 在模型请求内执行 `openrouter:web_search` 和 `openrouter:web_fetch`，模型按需选择。运行记录的 `model.finished` 会记录服务端返回的网页工具用量和来源。[OpenRouter 托管工具](https://openrouter.ai/docs/guides/features/server-tools)
+
+```json
+{
+  "task": "Find the OpenRouter web fetch guide, verify its supported engines, and submit a short note with the source URL.",
+  "web": {
+    "enabled": true,
+    "browser_origins": ["https://openrouter.ai"]
+  }
+}
+```
+
+`web.browser_origins` 可以独立配置，填写允许访问的 HTTPS 来源。Playwright 继续用 `url`、`actions` 和可选的 `screenshot` 查询公网网页。首次公网调用会启动独立的 Docker 或 E2B 浏览器沙箱。代理核对连接来源和目标 IP，浏览器拦截常规页面请求，只放行 GET 和 HEAD。截图写回任务工作区，之后可以通过 `submit_results` 提交。浏览器访问的页面记录在 `browser.page_read`。
+
+只使用搜索和抓取时，直接用 `--request` 运行即可。配置了公网浏览器来源时，选择 `--sandbox docker` 或 `--sandbox e2b`，并构建含新版 worker 的镜像。任务 Shell 的出网通过 `--sandbox-network` 单独配置。页面依赖的 CDN 等跨域资源也需要列出对应的 HTTPS 来源。
 
 ## 按需读取 Skill
 

@@ -1,10 +1,13 @@
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
+from urllib.parse import urlsplit
 
 from agent_cook.protocol.ui import UiAttachment
 from agent_cook.sandbox.limits import MAX_COMMAND_SECONDS, MAX_FIND_RESULTS, MAX_WRITE_BYTES
+from agent_cook.sandbox.urls import LOOPBACK_HOSTS
 from agent_cook.tools.artifacts import SUBMIT_RESULTS, ArtifactExporter
+from agent_cook.tools.public_browser import PublicBrowser
 from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.spec import ToolContext, ToolDefinition, ToolError, ToolHandler, ToolResult
 
@@ -141,7 +144,9 @@ async def _run_command(arguments: dict[str, Any], context: ToolContext) -> ToolR
     )
 
 
-async def _preview(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+async def _preview(
+    arguments: dict[str, Any], context: ToolContext, public_browser: PublicBrowser | None,
+) -> ToolResult:
     if ("path" in arguments) == ("url" in arguments):
         raise ToolError("Provide exactly one of path or url for the browser preview.")
     if "path" in arguments and "server_argv" in arguments:
@@ -149,18 +154,40 @@ async def _preview(arguments: dict[str, Any], context: ToolContext) -> ToolResul
     for action in arguments.get("actions", ()):
         if action["action"] != "click" and "value" not in action:
             raise ToolError(f"The browser action {action['action']} requires value.")
-    sandbox = await context.get_sandbox()
-    result = await sandbox.request("playwright", arguments, timeout_seconds=65)
+    url = arguments.get("url")
+    try:
+        public_url = url is not None and urlsplit(url).hostname not in LOOPBACK_HOSTS
+    except ValueError as error:
+        raise ToolError("Provide a valid browser URL.") from error
+    if public_url:
+        if public_browser is None:
+            raise ToolError("Configure web.browser_origins in the task request to browse public sites.")
+        result = await public_browser.read(arguments, context)
+    else:
+        sandbox = await context.get_sandbox()
+        result = await sandbox.request("playwright", arguments, timeout_seconds=65)
     return ToolResult(json.dumps(result, ensure_ascii=False))
 
 
-def workspace_tools(exporter: ArtifactExporter) -> tuple[ToolRegistry, tuple[str, ...]]:
+def workspace_tools(
+    exporter: ArtifactExporter, *, public_browser: PublicBrowser | None = None,
+) -> tuple[ToolRegistry, tuple[str, ...]]:
     registry = ToolRegistry()
     registry.register(_LS, _operation("list_files"))
     for definition in _FILES:
         registry.register(definition, _operation(definition.name))
     registry.register(_COMMAND, _run_command)
-    registry.register(_BROWSER, _preview)
+    browser = _BROWSER
+    if public_browser is not None:
+        browser = replace(_BROWSER, description=(
+            _BROWSER.description + " For public page reads, use url and optional actions or screenshot. "
+            "Approved HTTPS origins for this task: " + ", ".join(public_browser.origins)
+        ))
+
+    async def preview(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+        return await _preview(arguments, context, public_browser)
+
+    registry.register(browser, preview)
 
     async def submit(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         sandbox = await context.get_sandbox()

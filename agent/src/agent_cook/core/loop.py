@@ -44,10 +44,15 @@ async def run_loop(
         except ContextLimitError as error:
             raise AgentRunError(str(error)) from error
         events.emit("model.started", turn=turn_number)
-        turn = await model.next_turn(model=spec.model, messages=messages, tools=definitions)
-        budget.observe(messages, turn.prompt_tokens)
+        options = {"web_enabled": True} if spec.web_enabled else {}
+        turn = await model.next_turn(model=spec.model, messages=messages, tools=definitions, **options)
+        # The hosted tool transcript contributes to usage but is not sent back by this runtime.
+        hosted_context = bool(turn.web_sources) or any(turn.web_usage.values())
+        budget.observe(messages, None if hosted_context else turn.prompt_tokens)
+        web = {"web_usage": turn.web_usage, "web_sources": list(turn.web_sources)} if hosted_context else {}
         events.emit(
             "model.finished", turn=turn_number, finish_reason=turn.finish_reason, prompt_tokens=turn.prompt_tokens,
+            **web,
         )
 
         if turn.finish_reason not in ("stop", "tool_calls"):

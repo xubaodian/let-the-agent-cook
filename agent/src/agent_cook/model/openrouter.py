@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from agent_cook.model.client import ModelTurn
@@ -22,6 +22,7 @@ class OpenRouterModel:
         model: str,
         messages: Sequence[Message],
         tools: Sequence[ToolDefinition],
+        web_enabled: bool = False,
     ) -> ModelTurn:
         request: dict[str, Any] = {
             "model": model,
@@ -40,6 +41,16 @@ class OpenRouterModel:
                 for tool in tools
             ]
             request["extra_body"] = {"provider": {"require_parameters": True}}
+        if web_enabled:
+            # The SDK's typed chat tools do not describe OpenRouter's hosted tool types.
+            request.setdefault("extra_body", {})["tools"] = [
+                *request.pop("tools", []),
+                {
+                    "type": "openrouter:web_search",
+                    "parameters": {"max_uses": 3, "max_results": 5, "max_total_results": 15},
+                },
+                {"type": "openrouter:web_fetch", "parameters": {"max_uses": 3, "max_content_tokens": 4000}},
+            ]
 
         response = await self._client.chat.completions.create(**request)
         if not response.choices:
@@ -57,7 +68,8 @@ class OpenRouterModel:
         reasoning_details = getattr(raw_message, "reasoning_details", None)
         if reasoning_details is not None:
             provider_data["reasoning_details"] = reasoning_details
-        prompt_tokens = getattr(getattr(response, "usage", None), "prompt_tokens", None)
+        usage = getattr(response, "usage", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
 
         return ModelTurn(
             message=Message(
@@ -68,7 +80,32 @@ class OpenRouterModel:
             ),
             finish_reason=choice.finish_reason,
             prompt_tokens=prompt_tokens if type(prompt_tokens) is int and prompt_tokens > 0 else None,
+            web_usage=_web_usage(usage) if web_enabled else {},
+            web_sources=_web_sources(raw_message) if web_enabled else (),
         )
+
+
+def _field(value: object, key: str) -> Any:
+    return value.get(key) if isinstance(value, Mapping) else getattr(value, key, None)
+
+
+def _web_usage(usage: object) -> dict[str, int]:
+    details = _field(usage, "server_tool_use_details") or _field(usage, "server_tool_use")
+    names = ("web_search_requests", "tool_calls_requested", "tool_calls_executed")
+    return {name: count for name in names if type(count := _field(details, name)) is int and count >= 0}
+
+
+def _web_sources(message: object) -> tuple[dict[str, str], ...]:
+    sources: dict[str, dict[str, str]] = {}
+    for annotation in _field(message, "annotations") or ():
+        if _field(annotation, "type") != "url_citation":
+            continue
+        citation = _field(annotation, "url_citation") or annotation
+        url = _field(citation, "url")
+        if isinstance(url, str) and url.startswith(("https://", "http://")):
+            title = _field(citation, "title")
+            sources[url] = {"url": url, "title": title if isinstance(title, str) else ""}
+    return tuple(sources.values())
 
 
 def _encode_message(message: Message) -> dict[str, object]:

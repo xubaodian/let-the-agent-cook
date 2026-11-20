@@ -2,7 +2,7 @@ import mimetypes
 import os
 import socket
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import monotonic, sleep
@@ -10,10 +10,10 @@ from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
 from agent_cook.sandbox.paths import workspace_path
+from agent_cook.sandbox.urls import LOOPBACK_HOSTS, public_https_origin
+from agent_cook.sandbox.worker.browser_proxy import browser_proxy
 from agent_cook.sandbox.worker.process import launch, stop
 from agent_cook.sandbox.worker.workspace import Workspace
-
-_LOOPBACK = {"localhost", "127.0.0.1", "::1"}
 
 
 def _origin(url: str) -> tuple[str, str, int]:
@@ -21,7 +21,7 @@ def _origin(url: str) -> tuple[str, str, int]:
     scheme = {"ws": "http", "wss": "https"}.get(parsed.scheme, parsed.scheme)
     if (
         scheme not in ("http", "https")
-        or parsed.hostname not in _LOOPBACK
+        or parsed.hostname not in LOOPBACK_HOSTS
         or parsed.username is not None
         or parsed.password is not None
     ):
@@ -113,6 +113,37 @@ def playwright_preview(
     actions: list[dict[str, str]] | None = None,
     screenshot: str | None = None,
 ) -> dict[str, Any]:
+    with _preview_target(workspace, path, url, server_argv, cwd) as target:
+        allowed_origin = _origin(target)
+        return _visit(workspace, target, actions, screenshot, lambda url: _origin(url) == allowed_origin)
+
+
+def playwright_public(
+    workspace: Workspace,
+    url: str,
+    browser_origins: list[str],
+    actions: list[dict[str, str]] | None = None,
+    screenshot: str | None = None,
+) -> dict[str, Any]:
+    allowed_origins = frozenset(public_https_origin(origin, origin_only=True) for origin in browser_origins)
+    if public_https_origin(url) not in allowed_origins:
+        raise ValueError("Add this HTTPS origin to the task's web.browser_origins before reading it.")
+    with browser_proxy(allowed_origins) as proxy:
+        return _visit(
+            workspace, url, actions, screenshot,
+            lambda url: public_https_origin(url) in allowed_origins, proxy=proxy,
+        )
+
+
+def _visit(
+    workspace: Workspace,
+    target: str,
+    actions: list[dict[str, str]] | None,
+    screenshot: str | None,
+    allowed: Callable[[str], bool],
+    *,
+    proxy: str | None = None,
+) -> dict[str, Any]:
     from playwright.sync_api import Error, expect, sync_playwright
 
     if len(actions or ()) > 8:
@@ -122,30 +153,34 @@ def playwright_preview(
         raise ValueError("Choose a .png path for the screenshot.")
 
     try:
-        with _preview_target(workspace, path, url, server_argv, cwd) as target, sync_playwright() as pw:
-            allowed_origin = _origin(target)
-            executable = os.environ.get("AGENT_COOK_CHROMIUM")
-            browser = pw.chromium.launch(executable_path=executable)
+        with sync_playwright() as pw:
+            launch_options: dict[str, Any] = {"executable_path": os.environ.get("AGENT_COOK_CHROMIUM")}
+            if proxy is not None:
+                launch_options.update(
+                    proxy={"server": proxy, "bypass": "<-loopback>"},
+                    args=["--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+                )
+            browser = pw.chromium.launch(**launch_options)
             context = browser.new_context(
                 service_workers="block",
                 accept_downloads=False,
                 viewport={"width": 1280, "height": 720},
             )
 
-            def same_origin(address: str) -> bool:
+            def is_allowed(address: str) -> bool:
                 try:
-                    return _origin(address) == allowed_origin
+                    return allowed(address)
                 except ValueError:
                     return False
 
             def route_request(route: Any) -> None:
-                if same_origin(route.request.url):
+                if is_allowed(route.request.url) and (proxy is None or route.request.method in ("GET", "HEAD")):
                     route.continue_()
                 else:
                     route.abort()
 
             def route_socket(route: Any) -> None:
-                if same_origin(route.url):
+                if proxy is None and is_allowed(route.url):
                     route.connect_to_server()
                 else:
                     route.close()
@@ -166,8 +201,8 @@ def playwright_preview(
                 response = page.goto(target, wait_until="domcontentloaded", timeout=8000)
                 if response is not None and response.status >= 400:
                     raise ValueError(f"The preview returned HTTP {response.status}.")
-                if not same_origin(page.url):
-                    raise ValueError("The page left the selected loopback origin.")
+                if not is_allowed(page.url):
+                    raise ValueError("The page left its allowed origins.")
                 for step in actions or ():
                     locator = page.locator(step["selector"])
                     action = step["action"]
@@ -181,8 +216,8 @@ def playwright_preview(
                         expect(locator).to_contain_text(step["value"], timeout=3000)
                     else:
                         raise ValueError("Use click, fill, press, or expect_text for browser actions.")
-                    if not same_origin(page.url):
-                        raise ValueError("The page left the selected loopback origin.")
+                    if not is_allowed(page.url):
+                        raise ValueError("The page left its allowed origins.")
                 result = {
                     "url": page.url,
                     "title": page.title()[:300],
