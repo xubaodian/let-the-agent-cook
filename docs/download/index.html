@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>下载 Agent Cook</title>
+  <style>
+    :root { color-scheme: light; background: #f7f5ef; color: #21241d; font: 1rem/1.55 system-ui, sans-serif; }
+    body { margin: 0; }
+    main { max-width: 52rem; margin: 0 auto; padding: clamp(2rem, 7vw, 6rem) 1.25rem; }
+    h1 { font-size: clamp(2.4rem, 7vw, 4rem); letter-spacing: -.055em; line-height: 1.1; margin: 0; }
+    ul { padding: 0; list-style: none; display: grid; gap: .75rem; margin: 2.25rem 0; }
+    li a { display: flex; flex-wrap: wrap; gap: .35rem 1rem; justify-content: space-between; align-items: center;
+      padding: 1rem 1.2rem; background: white; color: #21241d; border: 1px solid #c9cdc1;
+      border-radius: .75rem; text-decoration: none; }
+    li a:hover, li a:focus-visible { border-color: #28523c; text-decoration: underline; }
+    .recommended a { background: #224836; border-color: #224836; color: white; }
+    .recommended small { font-weight: 600; }
+    a { color: #28523c; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>下载 Agent Cook</h1>
+    <p>安装后打开 Agent Cook，连接 OpenRouter，选择文件或文件夹开始处理。</p>
+    <ul id="installers">
+      <li data-os="windows"><a href="https://github.com/xubaodian/let-the-agent-cook/releases/latest/download/AgentCook-windows-x64.msi">
+        <strong>Windows 11 x64</strong><small>MSI 安装包</small>
+      </a></li>
+      <li data-os="macos"><a href="https://github.com/xubaodian/let-the-agent-cook/releases/latest/download/AgentCook-macos-arm64.pkg">
+        <strong>macOS Apple Silicon</strong><small>PKG 安装包</small>
+      </a></li>
+      <li data-os="linux"><a href="https://github.com/xubaodian/let-the-agent-cook/releases/latest/download/AgentCook-ubuntu-amd64.deb">
+        <strong>Ubuntu 24.04 x64</strong><small>DEB 安装包</small>
+      </a></li>
+    </ul>
+    <p>第一次文件任务会引导你准备 Docker。</p>
+    <p><a href="https://github.com/xubaodian/let-the-agent-cook/releases">查看所有 GitHub Releases</a></p>
+  </main>
+  <script>
+    const platform = (navigator.userAgentData?.platform || navigator.platform).toLowerCase();
+    const os = platform.startsWith("win") ? "windows" :
+      platform.startsWith("mac") ? "macos" : platform.includes("linux") ? "linux" : "";
+    const installers = document.querySelector("#installers");
+    const recommended = installers.querySelector(`[data-os="${os}"]`);
+    if (recommended) {
+      recommended.classList.add("recommended");
+      recommended.querySelector("small").append(" · 推荐");
+      installers.prepend(recommended);
+    }
+  </script>
+</body>
+</html>

@@ -5,6 +5,7 @@ import json
 import secrets
 import sys
 import time
+import warnings
 import webbrowser
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -90,11 +91,13 @@ def connect_browser() -> str:
 
 def available_models() -> tuple[str, ...]:
     models = _openrouter("/models").get("data", [])
+    if not isinstance(models, list):
+        raise ValueError("OpenRouter did not return a model list.")
     return tuple(sorted({
         model["id"] for model in models
-        if isinstance(model.get("id"), str)
+        if isinstance(model, dict) and isinstance(model.get("id"), str)
         and "tools" in (model.get("supported_parameters") or ())
-        and "text" in (model.get("architecture", {}).get("output_modalities") or ())
+        and "text" in ((model.get("architecture") or {}).get("output_modalities") or ())
     }))
 
 
@@ -116,8 +119,9 @@ def _choose_model(read: Callable[[str], str], choices: ModelChoices, current: st
             return current
         if value.startswith("/"):
             matches = tuple(model for model in options if value[1:].casefold() in model.casefold())
-        elif value.isascii() and value.isdecimal() and len(value) <= 2 and 1 <= int(value) <= min(15, len(matches)):
-            return matches[int(value) - 1]
+        elif value.isascii() and value.isdecimal():
+            if len(value) <= 2 and 1 <= int(value) <= min(15, len(matches)):
+                return matches[int(value) - 1]
         elif value and not any(char.isspace() for char in value):
             return value
 
@@ -129,7 +133,12 @@ def connect(
     if new_key:
         method = read("Connect OpenRouter in browser [Enter], or type key to paste a key: ").strip().lower()
         if method == "key":
-            api_key = getpass.getpass("OpenRouter API key: ").strip()
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", getpass.GetPassWarning)
+                try:
+                    api_key = getpass.getpass("OpenRouter API key: ").strip()
+                except getpass.GetPassWarning as error:
+                    raise ValueError("Use a terminal that can hide your API key or connect in the browser.") from error
             if not api_key or any(char.isspace() for char in api_key):
                 raise ValueError("Enter a valid OpenRouter API key.")
             _openrouter("/key", key=api_key)

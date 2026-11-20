@@ -16,11 +16,13 @@ import tomllib
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from pathlib import Path
+from uuid import UUID, uuid5
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "agent/src/agent_cook"
 VERSION = tomllib.loads((ROOT / "agent/pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 WIX = "http://wixtoolset.org/schemas/v4/wxs"
+UPGRADE_CODE = UUID("5b2de3a8-b19c-4b62-ae5e-1ef6df4479ef")
 
 
 def call(*command: str | Path) -> None:
@@ -69,7 +71,7 @@ def write_wix(payload: Path, path: Path) -> None:
     doc = ET.Element(f"{{{WIX}}}Wix")
     package = element(
         doc, "Package", Name="Agent Cook", Manufacturer="Let the Agent Cook", Version=VERSION,
-        UpgradeCode="5b2de3a8-b19c-4b62-ae5e-1ef6df4479ef", Scope="perUser", InstallerVersion="500",
+        UpgradeCode=str(UPGRADE_CODE), Scope="perUser", InstallerVersion="500",
         Codepage="65001",
     )
     element(package, "MajorUpgrade", DowngradeErrorMessage="A newer version of Agent Cook is already installed.")
@@ -83,7 +85,7 @@ def write_wix(payload: Path, path: Path) -> None:
     feature = element(package, "Feature", Id="Core", Title="Agent Cook", Level="1")
 
     def component(parent, identifier):
-        item = element(parent, "Component", Id=identifier, Guid="*")
+        item = element(parent, "Component", Id=identifier, Guid=str(uuid5(UPGRADE_CODE, identifier)))
         element(
             item, "RegistryValue", Root="HKCU", Key=r"Software\Agent Cook\Installer",
             Name=identifier, Type="integer", Value="1", KeyPath="yes",
@@ -208,7 +210,7 @@ def linux(payload: Path, output: Path, work: Path) -> None:
     )
     (base / "DEBIAN/control").write_text(
         f"Package: agent-cook\nVersion: {VERSION}\nArchitecture: amd64\n"
-        "Maintainer: Let the Agent Cook <https://github.com/xubaodian/let-the-agent-cook>\n"
+        "Maintainer: Let the Agent Cook <22562011+xubaodian@users.noreply.github.com>\n"
         "Depends: libc6 (>= 2.39)\nRecommends: gnome-keyring, xdg-utils\n"
         "Description: Agent Cook command line application\n", encoding="utf-8",
     )

@@ -43,6 +43,7 @@ class CliEntryTest(unittest.TestCase):
             TemporaryDirectory() as directory,
             patch.dict(os.environ, ENV),
             patch.dict(sys.modules, {"openai": sdk(create)}),
+            patch("agent_cook.cli.prepare_docker") as docker,
             patch("sys.stdin", io.StringIO("Build a summary.")),
             redirect_stdout(io.StringIO()) as output,
             redirect_stderr(io.StringIO()),
@@ -52,6 +53,7 @@ class CliEntryTest(unittest.TestCase):
             self.assertEqual(trace.read_text(encoding="utf-8"), output.getvalue())
 
         self.assertEqual(status, 0)
+        docker.assert_not_called()
         self.assertEqual(create.call_args.kwargs["messages"][-1]["content"], "Build a summary.")
         events = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual([event["seq"] for event in events], [1, 2, 3, 4])
@@ -96,7 +98,7 @@ class CliEntryTest(unittest.TestCase):
                 patch("agent_cook.cli.prepare_docker"),
             ):
                 with patch("sys.stdin", io.StringIO('Read @"sales data.csv" and write a note.\n/exit\n')):
-                    status = main(["-C", directory, "--sandbox", "docker"])
+                    status = main(["-C", directory])
                 self.assertEqual(status, 0, diagnostics.getvalue())
                 source.unlink()
                 with patch("sys.stdin", io.StringIO("Revise the previous note.\n/exit\n")):

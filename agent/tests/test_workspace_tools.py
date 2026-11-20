@@ -313,7 +313,9 @@ class WorkspaceCliTest(unittest.TestCase):
             )
             file = root / event["data"]["artifact"]["path"]
             self.assertEqual(file.read_bytes(), source.read_bytes())
-            self.assertIn(str(file), stderr.getvalue())
+            delivered, = root.glob("*-results")
+            self.assertEqual((delivered / "input.txt").read_bytes(), source.read_bytes())
+            self.assertIn(str(delivered), stderr.getvalue())
 
         self.assertEqual(status, 0)
         self.assertEqual(stdout.getvalue(), "Delivered.\n")

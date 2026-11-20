@@ -126,7 +126,7 @@ def collect_inputs(paths: list[Path]) -> dict[str, bytes]:
     index = PortablePaths()
     remaining = MAX_TRANSFER_BYTES
     for path in paths:
-        path = path.absolute()
+        path = Path(os.path.abspath(path))
         info = path.lstat()
         if _link(info) or not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
             raise ValueError(f"Input '{path}' must be a regular file or directory.")

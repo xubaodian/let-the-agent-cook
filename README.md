@@ -2,7 +2,11 @@
 
 一个用 Python 写的 Agent Runtime，提供本地交互 CLI 和常驻 HTTP 服务。两个入口都使用 OpenRouter，按任务执行并记录可回放的事件。
 
-## 本地运行
+## 安装使用
+
+从 [GitHub Releases](https://github.com/xubaodian/let-the-agent-cook/releases/latest) 下载 Windows、Apple Silicon macOS 或 Ubuntu 安装包。打开 Agent Cook 后连接 OpenRouter，可通过 `/example` 体验文件夹任务，通过 `/open` 查看结果。[安装和验收步骤](docs/install.md)
+
+## 从源码运行
 
 在仓库根目录运行 `./cook setup`。`uv` 准备 Python 3.12，按 `agent/uv.lock` 安装项目依赖，并创建首次使用的配置文件。在 `.env` 填写 `OPENROUTER_API_KEY` 和你选择的 `OPENROUTER_MODEL` 后即可启动。
 
@@ -12,20 +16,20 @@
 ./cook run '用一句话介绍这个项目。'
 ```
 
-`./cook doctor` 检查依赖、模型配置和已选沙箱。也可以在仓库根目录用 `uv tool install --python 3.12 ./agent` 安装独立 CLI，然后从任意目录运行 `agent-cook`。独立安装使用当前进程的环境变量。通过 `-C` 指定工作目录和相对路径的基准。
+`./cook doctor` 检查依赖、模型配置和已选沙箱。也可以在仓库根目录用 `uv tool install --python 3.12 ./agent` 安装独立 CLI，然后从任意目录运行 `agent-cook`。通过 `-C` 指定工作目录和相对路径的基准。
 
 | 命令 | 用法 |
 |---|---|
-| `agent-cook` | 启动交互终端。可用 `@文件路径` 引用输入，`/model` 选模型，`/sandbox` 选工作区，`/help` 查看命令。 |
-| `agent-cook exec "任务"` | 单次执行。用 `--input` 可重复选择文件，用 `exec -` 从 stdin 读取任务。 |
+| `agent-cook` | 启动交互终端。可用 `@路径` 选择文件或文件夹，`/model` 选模型，`/sandbox` 选工作区，`/help` 查看命令。 |
+| `agent-cook exec "任务"` | 单次执行。用 `--input` 可重复选择文件或文件夹，用 `exec -` 从 stdin 读取任务。 |
 | `agent-cook resume --last` | 继续当前工作目录最近的会话，也可以用记录中的会话 ID。 |
 | `agent-cook serve` | 启动常驻 HTTP API。[服务端使用方式](docs/server.md) |
 
 交互时按 `Ctrl+C` 取消当前 Run。成功的 Run 保存对话、输入快照和最新交付的文件，续接时将它们重新放入工作区。用 `/new` 另开会话。已存在的 `agent-cook "任务"` 也是单次入口。
 
-`exec` 默认把最终答复放在 stdout。用 `--json` 时 stdout 输出 JSONL 事件。执行记录和产物路径打印到 stderr，默认保存在工作目录的 `.agent-cook/runs/`。
+`exec` 默认把最终答复放在 stdout。用 `--json` 时 stdout 输出 JSONL 事件。执行记录和结果目录的绝对路径打印到 stderr，默认保存在工作目录的 `.agent-cook/runs/`。
 
-文本任务可直接运行。需要工作区工具时使用 `--sandbox docker` 或 `--sandbox e2b`，也可设置 `AGENT_COOK_SANDBOX`。本地镜像可用 `./cook setup --docker` 准备。用 `./cook demo` 运行生成 HTML 和截图的快速示例。[工作区工具与沙箱](docs/workspace-tools.md)
+文本任务可直接运行。选择文件或文件夹时默认使用本机 Docker。无附件的生成任务可用 `--sandbox docker`，也可用 `--sandbox e2b` 或 `AGENT_COOK_SANDBOX` 切换工作区。源码运行可用 `./cook setup --docker` 准备开发镜像。用 `./cook demo` 运行生成 HTML 和截图的快速示例。[工作区工具与沙箱](docs/workspace-tools.md)
 
 使用沙箱时，可以用 `--skills-dir` 配置本机 Skill。模型先接收名称、描述和工作区入口，可用 `ls` 和 `read_file` 按需浏览和读取。[按需读取 Skill](docs/workspace-tools.md#按需读取-skill)
 
@@ -51,7 +55,8 @@ uv run --project agent agent-cook --models-config ./models.json '用一句话介
 | 1 | `--model` | `--image-model` |
 | 2 | 任务 JSON 的 `model` | 任务 JSON 的 `image_model` |
 | 3 | `OPENROUTER_MODEL` | `OPENROUTER_IMAGE_MODEL` |
-| 4 | 配置文件的 `chat.default` | 配置文件的 `image.default` |
+| 4 | 续接会话或 `/setup` 保存的模型 | 配置文件的 `image.default` |
+| 5 | 配置文件的 `chat.default` | |
 
 也可直接通过命令行、任务 JSON 或环境变量指定 OpenRouter 模型 ID。运行任务需要选择对话模型。在带沙箱的运行中选定生图模型后，Agent 可调用 `generate_image`。两类模型复用同一个 API Key。[生图用法](docs/workspace-tools.md#生图)
 
@@ -94,7 +99,7 @@ uv run --project agent agent-cook --models-config ./models.json '用一句话介
 ## 本地验证
 
 ```bash
-uv run --project agent python -m unittest discover -s agent/tests -v
+uv run --project agent --locked --all-extras python -m unittest discover -s agent/tests -v
 ```
 
-测试用真实工作区子进程验证文件、命令和产物交付。模型、Docker、E2B 和 Chromium 的客户端调用使用替身。
+回归使用测试模型验证文件、命令和产物交付。CI 还会用真实 Docker 容器跑文件夹任务和产物交付。[首发验收](docs/install.md#首发验收)

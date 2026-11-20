@@ -28,6 +28,8 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - name: Install locked packaging dependencies
         run: uv sync --project agent --locked --extra release --extra mcp --extra server --extra e2b
+      - name: Validate native host paths
+        run: uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_local_files.py -v
       - name: Install WiX
         if: runner.os == 'Windows'
         shell: pwsh
@@ -53,7 +55,8 @@ jobs:
           MACOS_NOTARY_ISSUER: ${{ inputs.signed && secrets.MACOS_NOTARY_ISSUER || '' }}
         run: |
           version="$(uv run --project agent --no-sync python -c 'from importlib.metadata import version; print(version("agent-cook"))')"
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agent-cook-sandbox:v$version"
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$owner/agent-cook-sandbox:v$version"
           options=()
           if [[ "$SIGNED" == true ]]; then options+=(--sign); fi
           if [[ -n "$MODELS" ]]; then
