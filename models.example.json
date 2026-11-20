@@ -1,0 +1,10 @@
+{
+  "chat": {
+    "default": null,
+    "available": []
+  },
+  "image": {
+    "default": null,
+    "available": []
+  }
+}

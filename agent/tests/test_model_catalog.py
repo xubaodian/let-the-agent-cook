@@ -13,16 +13,38 @@ from agent_cook.model.catalog import ModelCatalog
 
 
 class ModelCatalogTest(unittest.TestCase):
-    def test_list_models_works_without_credentials(self):
+    def test_list_models_has_no_defaults_without_user_configuration(self):
         with patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(main(["--list-models"]), 0)
 
         catalog = json.loads(stdout.getvalue())
-        self.assertEqual(catalog["chat"]["default"], "openai/gpt-5.4-mini")
-        self.assertIn(catalog["chat"]["default"], catalog["chat"]["available"])
-        self.assertGreater(len(catalog["chat"]["available"]), 1)
-        self.assertIsNone(catalog["image"]["default"])
-        self.assertIn("bytedance-seed/seedream-4.5", catalog["image"]["available"])
+        for group in ("chat", "image"):
+            self.assertEqual(catalog[group], {"default": None, "available": []})
+
+    def test_list_user_models_without_credentials(self):
+        catalog = {
+            "chat": {"default": "fixture/chat", "available": ["fixture/chat", "fixture/other-chat"]},
+            "image": {"default": None, "available": ["fixture/image"]},
+        }
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "models.json"
+            path.write_text(json.dumps(catalog), encoding="utf-8")
+            with patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(main(["--models-config", str(path), "--list-models"]), 0)
+        self.assertEqual(json.loads(stdout.getvalue()), catalog)
+
+    def test_task_requires_a_chat_model_from_the_user(self):
+        with (
+            patch.dict(os.environ, {"OPENROUTER_API_KEY": "fixture-key"}, clear=True),
+            patch("agent_cook.cli._run", new_callable=AsyncMock) as run,
+            redirect_stderr(io.StringIO()) as stderr,
+            self.assertRaises(SystemExit) as error,
+        ):
+            main(["Check."])
+
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn("Choose a chat model", stderr.getvalue())
+        run.assert_not_awaited()
 
     def test_catalog_default_must_be_in_its_own_list(self):
         with TemporaryDirectory() as directory:

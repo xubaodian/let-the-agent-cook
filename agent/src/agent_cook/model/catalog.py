@@ -1,6 +1,5 @@
 import json
 from dataclasses import dataclass
-from importlib.resources import files
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, ValidationError
@@ -31,17 +30,16 @@ class ModelChoices:
 
 @dataclass(frozen=True, slots=True)
 class ModelCatalog:
-    chat: ModelChoices
+    chat: ModelChoices = ModelChoices()
     image: ModelChoices = ModelChoices()
 
     @classmethod
-    def load(cls, path: Path | None = None) -> "ModelCatalog":
-        source = path if path is not None else files(__package__).joinpath("models.json")
+    def load(cls, path: Path) -> "ModelCatalog":
         try:
-            data = json.loads(source.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
             _CATALOG.validate(data)
         except json.JSONDecodeError as error:
-            raise ValueError(f"Invalid model catalog JSON at line {error.lineno} in {source}.") from error
+            raise ValueError(f"Invalid model catalog JSON at line {error.lineno} in {path}.") from error
         except ValidationError as error:
             raise ValueError(f"Invalid model catalog at {error.json_path}: {error.message}") from error
 

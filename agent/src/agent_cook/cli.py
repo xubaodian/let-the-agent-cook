@@ -166,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        catalog = ModelCatalog.load(args.models_config)
+        catalog = ModelCatalog.load(args.models_config) if args.models_config is not None else ModelCatalog()
     except (OSError, ValueError) as error:
         parser.error(str(error))
     if args.list_models:
@@ -195,7 +195,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         chat_model = _select_model(args.model, request.model, "OPENROUTER_MODEL", catalog.chat.default)
         if not chat_model:
-            raise ValueError("Set OPENROUTER_MODEL or pass --model with an OpenRouter model ID.")
+            raise ValueError(
+                "Choose a chat model via --model, the task's model, OPENROUTER_MODEL, "
+                "or chat.default in --models-config."
+            )
         if (args.image_model is not None or request.image_model is not None) and args.sandbox is None:
             raise ValueError("Selecting an image model for the task requires --sandbox.")
         image_model = _select_model(

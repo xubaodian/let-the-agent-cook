@@ -4,10 +4,11 @@
 
 ## 本地运行
 
-准备 Python 3.11 或更新版本、`uv` 和 OpenRouter API Key。对话默认使用 `openai/gpt-5.4-mini`。
+准备 Python 3.11 或更新版本、`uv` 和 OpenRouter API Key。把 `OPENROUTER_MODEL` 设为你要用的 OpenRouter 模型 ID。
 
 ```bash
 export OPENROUTER_API_KEY='your-key'
+export OPENROUTER_MODEL='provider/chat-model'
 uv run --project agent agent-cook '用一句话介绍这个项目。'
 ```
 
@@ -25,11 +26,11 @@ uv run --project agent agent-cook '用一句话介绍这个项目。'
 
 ## 模型配置
 
-`--list-models` 输出 JSON 格式的对话和生图模型列表，无需 API Key。默认列表随安装包提供。可复制该文件并用 `--models-config ./models.json` 加载自定义列表。[models.json](agent/src/agent_cook/model/models.json)
+要管理模型列表，可以复制示例为 `models.json`，在 `chat.available` 和 `image.available` 填写你可用的模型 ID。两组的 `default` 可填各自列表中的一个 ID，也可保留为 `null`。通过 `--models-config` 加载，`--list-models` 可在没有 API Key 时查看。[models.example.json](models.example.json)
 
 ```bash
-uv run --project agent agent-cook --list-models
-uv run --project agent agent-cook --model google/gemini-3.1-flash-lite '用一句话介绍这个项目。'
+uv run --project agent agent-cook --models-config ./models.json --list-models
+uv run --project agent agent-cook --models-config ./models.json '用一句话介绍这个项目。'
 ```
 
 两类模型各自按以下优先级选择。
@@ -41,7 +42,7 @@ uv run --project agent agent-cook --model google/gemini-3.1-flash-lite '用一�
 | 3 | `OPENROUTER_MODEL` | `OPENROUTER_IMAGE_MODEL` |
 | 4 | 配置文件的 `chat.default` | 配置文件的 `image.default` |
 
-可直接填入账户可用的 OpenRouter 模型 ID。默认的 `image.default` 为 `null`。在带沙箱的运行中选定生图模型后，Agent 可调用 `generate_image`。两类模型复用同一个 API Key。[生图用法](docs/workspace-tools.md#生图)
+也可直接通过命令行、任务 JSON 或环境变量指定 OpenRouter 模型 ID。运行任务需要选择对话模型。在带沙箱的运行中选定生图模型后，Agent 可调用 `generate_image`。两类模型复用同一个 API Key。[生图用法](docs/workspace-tools.md#生图)
 
 ## 执行与上下文
 

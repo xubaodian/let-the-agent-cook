@@ -83,6 +83,7 @@ uv run --project agent agent-cook --sandbox docker --skills-dir /path/to/skills 
 
 ```bash
 uv run --project agent agent-cook --sandbox docker --timeout 240 \
+  --model 'provider/chat-model' \
   --image-model bytedance-seed/seedream-4.5 \
   '生成一张 16:9 的深蓝色城市夜景，用 submit_results 交付图片。'
 ```
@@ -96,6 +97,7 @@ docker build -f sandbox/Dockerfile -t agent-cook-sandbox:local .
 
 export OPENROUTER_API_KEY='your-key'
 uv run --project agent agent-cook --sandbox docker --max-turns 16 --timeout 180 \
+  --model 'provider/chat-model' \
   '在工作区写一个计数器网页，用 playwright 点击按钮并截屏。用 submit_results 交付网页和截图。'
 ```
 

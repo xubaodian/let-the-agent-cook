@@ -6,7 +6,7 @@
 {
   "schema_version": 1,
   "task": "用项目数据生成简报，复核关键数字后提交",
-  "model": "openai/gpt-5.4-mini",
+  "model": "provider/chat-model",
   "plugins": ["./plugins/reporting"],
   "skills": ["brief"],
   "mcp_tools": ["project-data/lookup"]
