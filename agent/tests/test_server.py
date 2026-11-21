@@ -42,6 +42,7 @@ class ServerConfigTest(unittest.TestCase):
             }), encoding="utf-8")
             with (
                 patch.dict(os.environ, {}, clear=True),
+                patch("agent_cook.settings.settings_directory", return_value=root),
                 patch("uvicorn.run") as serve,
                 patch("agent_cook.server.app.create_app") as app,
                 patch("agent_cook.cli.run_task", new_callable=AsyncMock) as run,

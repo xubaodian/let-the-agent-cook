@@ -30,28 +30,34 @@ class DockerDeliveryTest(unittest.TestCase):
         self.enterContext(redirect_stdout(io.StringIO()))
         self.enterContext(patch.dict(os.environ, ENV))
 
-    def run_task(self, *turns):
+    def run_task(self, *turns, interactive=False):
         create = AsyncMock(side_effect=turns)
         with patch.dict(sys.modules, {"openai": sdk(create)}):
+            if interactive:
+                with patch("sys.stdin", io.StringIO(f'Update @"{FIXTURE}".\n/open\n/exit\n')):
+                    return main(["-C", str(self.directory), "--docker-image", IMAGE])
             return main([
                 "exec", "-C", str(self.directory), "--docker-image", IMAGE,
                 "--input", FIXTURE, "Update the copied table and deliver it with a summary.",
             ])
 
     def test_folder_round_trip_keeps_the_latest_versions_and_original(self):
-        status = self.run_task(
-            tool(1, "read_file", path=SALES),
-            tool(2, "write_file", path=SALES, content="draft"),
-            tool(3, "submit_results", paths=[SALES]),
-            tool(4, "write_file", path=SALES, content="final"),
-            tool(5, "write_file", path=f"{FIXTURE}/总结.txt", content="Total units: 62"),
-            tool(6, "submit_results", paths=[SALES, f"{FIXTURE}/总结.txt"]),
-            response("Delivered."),
-        )
+        with patch("agent_cook.cli._open_directory") as open_results:
+            status = self.run_task(
+                tool(1, "read_file", path=SALES),
+                tool(2, "write_file", path=SALES, content="draft"),
+                tool(3, "submit_results", paths=[SALES]),
+                tool(4, "write_file", path=SALES, content="final"),
+                tool(5, "write_file", path=f"{FIXTURE}/总结.txt", content="Total units: 62"),
+                tool(6, "submit_results", paths=[SALES, f"{FIXTURE}/总结.txt"]),
+                response("Delivered."),
+                interactive=True,
+            )
         self.assertEqual(status, 0, self.diagnostics.getvalue())
         self.assertEqual((self.directory / SALES).read_bytes(), self.original)
         runs = self.directory / ".agent-cook/runs"
         delivered, = runs.glob("*-results")
+        open_results.assert_called_once_with(delivered)
         self.assertIn(str(delivered), self.diagnostics.getvalue())
         self.assertEqual((delivered / SALES).read_text(encoding="utf-8"), "final")
         self.assertEqual((delivered / FIXTURE / "总结.txt").read_text(encoding="utf-8"), "Total units: 62")

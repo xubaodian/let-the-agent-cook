@@ -177,7 +177,7 @@ class ExaWebTest(unittest.TestCase):
         ):
             root = Path(directory)
             (root / "agent-cook.json").write_text(json.dumps({"api_keys": {"exa": "fixture-exa-key"}}), encoding="utf-8")
-            self.assertEqual(main(["exec", "-C", directory, "Look up pricing."]), 0)
+            self.assertEqual(main(["exec", "-C", directory, "--config", "agent-cook.json", "Look up pricing."]), 0)
 
         first, second, third = (attempt.kwargs for attempt in create.await_args_list)
         self.assertEqual([item["function"]["name"] for item in first["tools"]], ["web_search", "web_fetch"])

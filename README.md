@@ -8,10 +8,10 @@
 
 ## 从源码运行
 
-在仓库根目录运行 `./cook setup`。`uv` 准备 Python 3.12，按 `agent/uv.lock` 安装依赖，并创建本地 `agent-cook.json`。填写 `api_keys.openrouter`，把一个模型 ID 填入 `models.chat.available` 和 `models.chat.default` 后即可启动。
+解压源码后，macOS 和 Linux 在源码目录运行 `./install`，Windows 双击 `install.cmd`。安装脚本准备 uv、Python 和锁定的依赖，随后打开 CLI。下次用 `./cook` 或 `cook.cmd` 启动，重复安装可修复依赖。[安装步骤](docs/install.md)
 
 ```bash
-./cook setup
+./install
 ./cook
 ./cook run '用一句话介绍这个项目。'
 ```
@@ -23,13 +23,14 @@
 | `agent-cook` | 启动交互终端。可用 `@路径` 选择文件或文件夹，`/model` 选模型，`/sandbox` 选工作区，`/help` 查看命令。 |
 | `agent-cook exec "任务"` | 单次执行。用 `--input` 可重复选择文件或文件夹，用 `exec -` 从 stdin 读取任务。 |
 | `agent-cook resume --last` | 继续当前工作目录最近的会话，也可以用记录中的会话 ID。 |
+| `agent-cook docker` | 检查或启动本机 Docker，准备当前工作区镜像。 |
 | `agent-cook serve` | 启动常驻 HTTP API。[服务端使用方式](docs/server.md) |
 
 交互时按 `Ctrl+C` 取消当前 Run。成功的 Run 保存对话、输入快照和最新交付的文件，续接时将它们重新放入工作区。用 `/new` 另开会话。已存在的 `agent-cook "任务"` 也是单次入口。
 
 `exec` 默认把最终答复放在 stdout。用 `--json` 时 stdout 输出 JSONL 事件。执行记录和结果目录的绝对路径打印到 stderr，默认保存在工作目录的 `.agent-cook/runs/`。
 
-文本任务可直接运行。选择文件或文件夹时默认使用本机 Docker。无附件的生成任务可用 `--sandbox docker`，也可用 `--sandbox e2b` 或 `AGENT_COOK_SANDBOX` 切换工作区。源码运行可用 `./cook setup --docker` 准备开发镜像。用 `./cook demo` 运行生成 HTML 和截图的快速示例。[工作区工具与沙箱](docs/workspace-tools.md)
+文本任务可直接运行。第一次用本机 Docker 处理文件时，CLI 自动准备镜像，也可用 `/docker` 提前准备。无附件的生成任务可用 `--sandbox docker`，也可用 `--sandbox e2b` 或 `AGENT_COOK_SANDBOX` 切换工作区。用 `./cook demo` 运行生成 HTML 和截图的快速示例。[工作区工具与沙箱](docs/workspace-tools.md)
 
 使用沙箱时，可以用 `--skills-dir` 配置本机 Skill。模型先接收名称、描述和工作区入口，可用 `ls` 和 `read_file` 按需浏览和读取。[按需读取 Skill](docs/workspace-tools.md#按需读取-skill)
 
@@ -41,13 +42,13 @@
 
 ## 启动和模型配置
 
-CLI 和 Server 共用 `agent-cook.json`。源码安装时会从示例创建本地配置，独立 CLI 也可以复制同一个示例。文件容纳 OpenRouter、Exa 和 E2B 密钥、两套模型列表、沙箱以及服务和运行默认值。仓库提交的是留空的示例，本地 `agent-cook.json` 已被 Git 忽略。[agent-cook.example.json](agent-cook.example.json)
+源码、安装包和 Server 默认共用系统用户目录中的 `agent-cook.json`。打开 CLI 后，向导可连接 OpenRouter、填写可选的 Exa Key 并选择模型。用 `/config` 查看配置的绝对路径，用 `/key` 换 Key，用 `/model <ID>` 更换默认模型。也可以直接编辑文件，重启后生效。[配置路径和命令](docs/install.md#配置) · [agent-cook.example.json](agent-cook.example.json)
 
-可以用 `--config` 指定文件，否则按任务工作目录、启动目录和系统的 Agent Cook 配置目录查找。`--models-config` 仍可单独指定模型目录，原有环境变量仍能覆盖文件里的对应值。`./cook` 继续读取已有的 `.env`。安装包的引导仍可把 OpenRouter Key 保存到系统凭据存储。
+已有项目配置可用 `--config` 指定。`--models-config` 仍可单独指定模型目录。环境变量可覆盖配置里的对应值，源码启动器也会读取已有的 `.env`。旧系统凭据库和模型设置可作为兼容来源。
 
 ```bash
 ./cook --list-models
-./cook run --config ./agent-cook.json '用一句话介绍这个项目。'
+./cook run '用一句话介绍这个项目。'
 ```
 
 两类模型各自按以下优先级选择。
@@ -59,7 +60,7 @@ CLI 和 Server 共用 `agent-cook.json`。源码安装时会从示例创建本�
 | 3 | `OPENROUTER_MODEL` | `OPENROUTER_IMAGE_MODEL` |
 | 4 | 续接会话的模型 | 续接会话的生图模型 |
 | 5 | `agent-cook.json` 中的 `models.chat.default` | 模型目录的 `image.default` |
-| 6 | `/setup` 保存的模型或模型目录的 `chat.default` | |
+| 6 | 旧版 `settings.json` 或兼容模型目录的 `chat.default` | |
 
 也可直接通过命令行、任务 JSON 或环境变量指定 OpenRouter 模型 ID。运行任务需要选择对话模型。在带沙箱的运行中选定生图模型后，Agent 可调用 `generate_image`。两类模型复用同一个 API Key。[生图用法](docs/workspace-tools.md#生图)
 

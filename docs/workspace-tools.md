@@ -114,7 +114,7 @@ Python 版本清单在 [sandbox/requirements.txt](../sandbox/requirements.txt)�
 
 ## 本地 Docker
 
-在仓库根目录用 `./cook setup --docker` 创建或更新工作区镜像。也可单独构建镜像，再把镜像名交给 `--docker-image`。
+源码启动时，第一次 Docker 任务会构建本地工作区镜像。可提前用 `./cook docker` 或 `cook.cmd docker` 准备，也可单独构建镜像，再把镜像名交给 `--docker-image`。
 
 ```bash
 docker build -f sandbox/Dockerfile -t agent-cook-sandbox:local .

@@ -15,7 +15,6 @@ from urllib.request import Request, urlopen
 
 from agent_cook.model.catalog import ModelChoices
 from agent_cook.model.openrouter import OPENROUTER_BASE_URL
-from agent_cook.settings import CredentialStoreError, save_key, save_model
 
 
 def _openrouter(path: str, *, data: dict | None = None, key: str | None = None) -> dict:
@@ -126,32 +125,41 @@ def _choose_model(read: Callable[[str], str], choices: ModelChoices, current: st
             return value
 
 
-def connect(
-    read: Callable[[str], str], choices: ModelChoices, *, api_key: str | None, model: str | None,
-) -> tuple[str, str]:
-    new_key = api_key is None
-    if new_key:
-        method = read("Connect OpenRouter in browser [Enter], or type key to paste a key: ").strip().lower()
-        if method == "key":
-            with warnings.catch_warnings():
-                warnings.simplefilter("error", getpass.GetPassWarning)
-                try:
-                    api_key = getpass.getpass("OpenRouter API key: ").strip()
-                except getpass.GetPassWarning as error:
-                    raise ValueError("Use a terminal that can hide your API key or connect in the browser.") from error
-            if not api_key or any(char.isspace() for char in api_key):
-                raise ValueError("Enter a valid OpenRouter API key.")
-            _openrouter("/key", key=api_key)
-        elif not method:
-            api_key = connect_browser()
-        else:
-            raise ValueError("Press Enter to connect in the browser, or type key.")
-    selected = _choose_model(read, choices, model or choices.default)
-    save_model(selected)
-    if new_key:
+def read_key(provider: str, *, optional: bool, configured: bool = False) -> str | None:
+    name = {"openrouter": "OpenRouter", "exa": "Exa"}[provider]
+    hint = (" [Enter to keep]" if configured else " [Enter to skip]") if optional else ""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", getpass.GetPassWarning)
         try:
-            save_key(api_key)
-        except CredentialStoreError as error:
-            print(f"{error} This session can use the key until you exit.", file=sys.stderr)
-    print("OpenRouter is ready. Type /example for a sample folder task.", file=sys.stderr)
-    return api_key, selected
+            key = getpass.getpass(f"{name} API key{hint}: ").strip()
+        except getpass.GetPassWarning as error:
+            raise ValueError("Use a terminal that can hide your API key.") from error
+    if not key and optional:
+        return None
+    if not key or any(char.isspace() for char in key):
+        raise ValueError(f"Enter a valid {name} API key.")
+    if provider == "openrouter":
+        _openrouter("/key", key=key)
+    return key
+
+
+def connect(
+    read: Callable[[str], str], choices: ModelChoices, *,
+    api_key: str | None, exa_key: str | None, model: str | None,
+) -> tuple[dict[str, str], str]:
+    keys = {}
+    prompt = (
+        "OpenRouter is configured. Press Enter to keep it, or type browser or key to replace it: "
+        if api_key else "Connect OpenRouter in browser [Enter], or type key to paste a key: "
+    )
+    method = read(prompt).strip().lower()
+    if method == "key":
+        if key := read_key("openrouter", optional=False):
+            keys["openrouter"] = key
+    elif method == "browser" or (not method and not api_key):
+        keys["openrouter"] = connect_browser()
+    elif method:
+        raise ValueError("Choose browser or key to connect OpenRouter.")
+    if key := read_key("exa", optional=True, configured=bool(exa_key)):
+        keys["exa"] = key
+    return keys, _choose_model(read, choices, model or choices.default)

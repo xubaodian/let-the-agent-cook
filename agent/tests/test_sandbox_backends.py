@@ -1,14 +1,17 @@
 import asyncio
+import io
 import json
 import shlex
 import sys
 import unittest
+from contextlib import redirect_stderr
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from agent_cook.sandbox.client import WorkerSandbox
 from agent_cook.sandbox.docker import DockerSandboxFactory
-from agent_cook.sandbox.docker_setup import check_linux_docker
+from agent_cook.sandbox.docker_setup import DockerSetupError, check_linux_docker, prepare_docker
 from agent_cook.sandbox.e2b import E2BSandboxFactory
 from agent_cook.sandbox.interface import SandboxError, SandboxTransportError
 
@@ -210,6 +213,52 @@ class BackendTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DockerSetupTest(unittest.TestCase):
+    def test_first_use_builds_from_source_or_pulls_the_release(self):
+        source = Path("/checkout")
+        for pull, command in (
+            (False, ["docker", "build", "-f", str(source / "sandbox/Dockerfile"), "-t", "fixture:image", str(source)]),
+            (True, ["docker", "pull", "fixture:image"]),
+        ):
+            with (
+                self.subTest(pull=pull),
+                patch("agent_cook.sandbox.docker_setup.check_linux_docker", return_value="docker"),
+                patch("agent_cook.sandbox.docker_setup.image_available", side_effect=[False, True]),
+                patch("agent_cook.sandbox.docker_setup.Popen") as open_process,
+                redirect_stderr(io.StringIO()),
+            ):
+                process = open_process.return_value.__enter__.return_value
+                process.wait.return_value = 0
+                prepare_docker("fixture:image", pull=pull, source=source)
+                prepare_docker("fixture:image", pull=pull, source=source)
+            self.assertEqual(open_process.call_count, 1)
+            self.assertEqual(open_process.call_args.args[0], command)
+
+    def test_preparation_starts_an_installed_engine_before_checking_its_image(self):
+        unavailable = DockerSetupError("Engine offline.", startable=True)
+        with (
+            patch("agent_cook.sandbox.docker_setup.check_linux_docker", side_effect=[unavailable, "docker"]) as check,
+            patch("agent_cook.sandbox.docker_setup._start_command", return_value=["colima", "start"]),
+            patch("agent_cook.sandbox.docker_setup.Popen") as open_process,
+            patch("agent_cook.sandbox.docker_setup.image_available", return_value=True) as image,
+            redirect_stderr(io.StringIO()),
+        ):
+            open_process.return_value.poll.return_value = 0
+            prepare_docker("fixture:image", pull=False, start=True)
+        open_process.assert_called_once_with(["colima", "start"])
+        check.assert_called_with(retry=False)
+        image.assert_called_once_with("docker", "fixture:image")
+
+    def test_preparation_opens_official_instructions_when_no_engine_is_installed(self):
+        unavailable = DockerSetupError("Engine offline.", startable=True)
+        with (
+            patch("agent_cook.sandbox.docker_setup.check_linux_docker", side_effect=unavailable),
+            patch("agent_cook.sandbox.docker_setup._start_command", return_value=None),
+            patch("agent_cook.sandbox.docker_setup.webbrowser.open") as browser,
+            self.assertRaisesRegex(DockerSetupError, "Complete Docker setup and retry"),
+        ):
+            prepare_docker("fixture:image", pull=False, start=True)
+        self.assertTrue(browser.call_args.args[0].startswith("https://docs.docker.com/"))
+
     def test_local_docker_probe_recovers_when_the_daemon_is_starting(self):
         run = Mock(side_effect=[
             SimpleNamespace(returncode=1, stdout="", stderr="Cannot connect to the Docker daemon"),

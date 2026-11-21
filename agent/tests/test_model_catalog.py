@@ -13,6 +13,22 @@ from agent_cook.model.catalog import ModelCatalog
 
 
 class ModelCatalogTest(unittest.TestCase):
+    def test_only_an_explicit_path_can_replace_the_user_configuration(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "user"
+            instance = root / "folder"
+            for path, model in ((config, "user/chat"), (instance, "folder/chat")):
+                path.mkdir()
+                (path / "agent-cook.json").write_text(json.dumps({
+                    "models": {"chat": {"available": [model], "default": model}},
+                }), encoding="utf-8")
+            with patch("agent_cook.settings.settings_directory", return_value=config):
+                for args, expected in (([], "user/chat"), (["--config", "agent-cook.json"], "folder/chat")):
+                    with self.subTest(args=args), redirect_stdout(io.StringIO()) as output:
+                        self.assertEqual(main(["-C", str(instance), "--list-models", *args]), 0)
+                    self.assertEqual(json.loads(output.getvalue())["chat"]["default"], expected)
+
     def test_unified_config_applies_cli_defaults_without_overriding_environment_or_flags(self):
         with TemporaryDirectory() as directory:
             config = Path(directory) / "agent-cook.json"
@@ -35,6 +51,7 @@ class ModelCatalogTest(unittest.TestCase):
             for env, args, key, exa, chat, image, max_turns, network in cases:
                 with (
                     self.subTest(chat=chat), patch.dict(os.environ, env, clear=True),
+                    patch("agent_cook.settings.settings_directory", return_value=config.parent),
                     patch("agent_cook.cli.DockerSandboxFactory") as factory,
                     patch("agent_cook.cli.prepare_docker"),
                     patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=RunResult("run", "Done.")) as run,
