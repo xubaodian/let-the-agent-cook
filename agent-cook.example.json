@@ -1,0 +1,37 @@
+{
+  "api_keys": {
+    "openrouter": null,
+    "exa": null,
+    "e2b": null
+  },
+  "models": {
+    "chat": {
+      "default": null,
+      "available": []
+    },
+    "image": {
+      "default": null,
+      "available": []
+    },
+    "chat_apis": {}
+  },
+  "model_api": null,
+  "sandbox": {
+    "backend": null,
+    "docker_image": null,
+    "e2b_template": null,
+    "network": false
+  },
+  "server": {
+    "token": null,
+    "host": "127.0.0.1",
+    "port": 8000,
+    "data_dir": null,
+    "concurrency": 1
+  },
+  "run": {
+    "context_window": 32768,
+    "max_turns": 8,
+    "timeout": 120
+  }
+}

@@ -13,6 +13,42 @@ from agent_cook.model.catalog import ModelCatalog
 
 
 class ModelCatalogTest(unittest.TestCase):
+    def test_unified_config_applies_cli_defaults_without_overriding_environment_or_flags(self):
+        with TemporaryDirectory() as directory:
+            config = Path(directory) / "agent-cook.json"
+            config.write_text(json.dumps({
+                "api_keys": {"openrouter": "config-key", "exa": "config-exa-key"},
+                "models": {
+                    "chat": {"default": "config/chat", "available": ["config/chat"]},
+                    "image": {"default": "config/image", "available": ["config/image"]},
+                },
+                "model_api": "responses",
+                "sandbox": {"backend": "docker", "docker_image": "config/sandbox", "network": True},
+                "run": {"max_turns": 12, "timeout": 180},
+            }), encoding="utf-8")
+            cases = (
+                ({}, [], "config-key", "config-exa-key", "config/chat", "config/image", 12, True),
+                ({"OPENROUTER_API_KEY": "env-key", "EXA_API_KEY": "env-exa-key", "OPENROUTER_MODEL": "env/chat"},
+                 ["--image-model", "cli/image", "--max-turns", "9", "--no-sandbox-network"],
+                 "env-key", "env-exa-key", "env/chat", "cli/image", 9, False),
+            )
+            for env, args, key, exa, chat, image, max_turns, network in cases:
+                with (
+                    self.subTest(chat=chat), patch.dict(os.environ, env, clear=True),
+                    patch("agent_cook.cli.DockerSandboxFactory") as factory,
+                    patch("agent_cook.cli.prepare_docker"),
+                    patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=RunResult("run", "Done.")) as run,
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()),
+                ):
+                    self.assertEqual(main(["exec", "-C", directory, *args, "Check."]), 0)
+                spec = run.await_args.args[0]
+                self.assertEqual((spec.model, spec.max_model_turns, spec.timeout_seconds), (chat, max_turns, 180))
+                self.assertEqual(run.await_args.args[2], key)
+                self.assertEqual(run.await_args.kwargs["exa_api_key"], exa)
+                self.assertEqual(run.await_args.kwargs["image_model"], image)
+                self.assertEqual(run.await_args.kwargs["model_api"], "responses")
+                factory.assert_called_once_with("config/sandbox", allow_network=network)
+
     def test_list_models_has_no_defaults_without_user_configuration(self):
         with patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(main(["--list-models"]), 0)

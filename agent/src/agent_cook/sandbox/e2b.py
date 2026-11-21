@@ -47,11 +47,12 @@ def _retryable_io(error: Exception) -> bool:
 
 class E2BSandboxFactory:
     def __init__(
-        self, template: str, *, allow_network: bool = False, lifetime_seconds: int = 300
+        self, template: str, *, api_key: str | None = None, allow_network: bool = False, lifetime_seconds: int = 300,
     ) -> None:
         if not template.strip():
             raise ValueError("Set an E2B template with the workspace worker installed.")
         self._template = template
+        self._api_key = api_key
         self._allow_network = allow_network
         self._lifetime_seconds = lifetime_seconds
 
@@ -67,6 +68,7 @@ class E2BSandboxFactory:
                 partial(
                     AsyncSandbox.create,
                     template=self._template,
+                    api_key=self._api_key,
                     timeout=self._lifetime_seconds,
                     allow_internet_access=self._allow_network,
                     network={"allow_public_traffic": False},

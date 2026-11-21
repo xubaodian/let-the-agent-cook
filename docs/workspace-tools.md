@@ -47,7 +47,9 @@ flowchart TD
 
 ## 网页检索和浏览器补查
 
-在任务 JSON 中设置 `web.enabled`，模型可以用同一个 `OPENROUTER_API_KEY` 搜索网页和抓取指定 URL。OpenRouter 在模型请求内执行 `openrouter:web_search` 和 `openrouter:web_fetch`，模型按需选择。运行记录的 `model.finished` 会记录服务端返回的网页工具用量和来源。[OpenRouter 托管工具](https://openrouter.ai/docs/guides/features/server-tools)
+在 `agent-cook.json` 填写 `api_keys.exa`，或设置 `EXA_API_KEY`，CLI 和 HTTP 服务会自动注册 `web_search` 和 `web_fetch`。工具按需通过 Streamable HTTP 连接 Exa 的官方 MCP，并通过 `x-api-key` 传递密钥。`web_search` 使用 Lite，默认返回 5 条结果，`web_fetch` 读取指定 URL 的正文。[Exa MCP](https://exa.ai/docs/get-started/exa-mcp)
+
+任务可用 `web.enabled: false` 关闭网页检索。缺少 Exa Key 时，`web.enabled: true` 会使用原有的 OpenRouter 托管搜索和抓取。运行记录的 `model.finished` 会记录 OpenRouter 返回的网页工具用量和来源。[OpenRouter 托管工具](https://openrouter.ai/docs/guides/features/server-tools)
 
 ```json
 {

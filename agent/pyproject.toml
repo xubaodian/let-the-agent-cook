@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28,<1",
     "jsonschema>=4.23,<5",
     "keyring>=25.6,<26",
+    "mcp>=1.29,<2",
     "openai>=1.66,<3",
     "prompt-toolkit>=3.0.50,<4",
     "PyYAML>=6,<7",
@@ -18,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 e2b = ["e2b>=2.56,<3"]
-mcp = ["mcp>=1.29,<2"]
+mcp = []
 server = ["fastapi>=0.115,<1", "uvicorn>=0.32,<1"]
 examples = ["openpyxl==3.1.5", "python-pptx==1.0.2", "playwright==1.62.0"]
 release = ["pyinstaller>=6.12,<7"]

@@ -45,9 +45,14 @@ class ModelCatalog:
     def load(cls, path: Path) -> "ModelCatalog":
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            _CATALOG.validate(data)
         except json.JSONDecodeError as error:
             raise ValueError(f"Invalid model catalog JSON at line {error.lineno} in {path}.") from error
+        return cls.parse(data)
+
+    @classmethod
+    def parse(cls, data: dict) -> "ModelCatalog":
+        try:
+            _CATALOG.validate(data)
         except ValidationError as error:
             raise ValueError(f"Invalid model catalog at {error.json_path}: {error.message}") from error
 

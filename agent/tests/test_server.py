@@ -1,11 +1,13 @@
 import asyncio
 import json
+import os
 import unittest
 from importlib.util import find_spec
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
+from agent_cook.cli import main
 from agent_cook.core.types import RunResult
 from agent_cook.protocol.artifacts import ArtifactRef
 from agent_cook.server.store import Job, RunStore
@@ -26,6 +28,34 @@ class RunStoreTest(unittest.TestCase):
                     self.fail("Another service acquired the lease.")
             with store.serve():
                 self.assertEqual(store.recover(), ())
+
+
+@unittest.skipUnless(find_spec("fastapi") and find_spec("uvicorn"), "Install the server extra.")
+class ServerConfigTest(unittest.TestCase):
+    def test_service_uses_one_config_for_auth_models_and_its_executor(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "agent-cook.json").write_text(json.dumps({
+                "api_keys": {"openrouter": "config-key", "exa": "config-exa-key"},
+                "models": {"chat": {"default": "config/chat", "available": ["config/chat"]}},
+                "server": {"token": "config-token", "host": "localhost", "port": 9456, "data_dir": "data"},
+            }), encoding="utf-8")
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch("uvicorn.run") as serve,
+                patch("agent_cook.server.app.create_app") as app,
+                patch("agent_cook.cli.run_task", new_callable=AsyncMock) as run,
+            ):
+                self.assertEqual(main(["serve", "-C", directory, "--port", "9457"]), 0)
+                self.assertEqual(app.call_args.args[0], root / "data")
+                options = app.call_args.kwargs
+                self.assertEqual(options["token"], "config-token")
+                self.assertEqual(options["chat_choices"], ("config/chat",))
+                serve.assert_called_once_with(app.return_value, host="localhost", port=9457, workers=1)
+                job = Job("run", "Check.", (), "config/chat", None)
+                asyncio.run(options["execute"](job, {}, None, root))
+                self.assertEqual(run.await_args.args[2], "config-key")
+                self.assertEqual(run.await_args.kwargs["exa_api_key"], "config-exa-key")
 
 
 @unittest.skipUnless(find_spec("fastapi") and find_spec("httpx"), "Install the server and MCP extras.")

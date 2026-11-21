@@ -134,31 +134,10 @@ async def register_mcp_tools(
     if not active_servers:
         return ()
 
-    from httpx import AsyncClient
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
-    from mcp.client.streamable_http import streamable_http_client
-
     names = []
     for server in active_servers:
         try:
-            config = server.config
-            if config["type"] == "stdio":
-                command, cwd = _stdio_paths(server.root, config)
-                params = StdioServerParameters(
-                    command=command, cwd=cwd, args=config.get("args", []),
-                    env={**config.get("env", {}), "PLUGIN_ROOT": str(server.root)},
-                )
-                streams = await stack.enter_async_context(stdio_client(params))
-            else:
-                http = await stack.enter_async_context(AsyncClient(
-                    headers=config.get("headers"), timeout=_TIMEOUT_SECONDS, follow_redirects=False,
-                    trust_env=urlsplit(config["url"]).hostname not in {"localhost", "127.0.0.1", "::1"},
-                ))
-                streams = await stack.enter_async_context(streamable_http_client(config["url"], http_client=http))
-            session = await stack.enter_async_context(ClientSession(
-                streams[0], streams[1], read_timeout_seconds=timedelta(seconds=_TIMEOUT_SECONDS),
-            ))
+            session = await _open_session(stack, server)
             wanted = selections[server.name] if selections is not None else None
             async with asyncio.timeout(_TIMEOUT_SECONDS):
                 names.extend(await _discover_tools(session, registry, server.name, wanted))
@@ -167,6 +146,42 @@ async def register_mcp_tools(
         except Exception as error:
             raise SandboxError(f"Could not load MCP tools from '{server.name}' ({type(error).__name__}).") from error
     return tuple(names)
+
+
+async def _open_session(stack: AsyncExitStack, server: McpServer) -> Any:
+    from httpx import AsyncClient
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    from mcp.client.streamable_http import streamable_http_client
+
+    config = server.config
+    if config["type"] == "stdio":
+        command, cwd = _stdio_paths(server.root, config)
+        params = StdioServerParameters(
+            command=command, cwd=cwd, args=config.get("args", []),
+            env={**config.get("env", {}), "PLUGIN_ROOT": str(server.root)},
+        )
+        streams = await stack.enter_async_context(stdio_client(params))
+    else:
+        http = await stack.enter_async_context(AsyncClient(
+            headers=config.get("headers"), timeout=_TIMEOUT_SECONDS, follow_redirects=False,
+            trust_env=urlsplit(config["url"]).hostname not in {"localhost", "127.0.0.1", "::1"},
+        ))
+        streams = await stack.enter_async_context(streamable_http_client(config["url"], http_client=http))
+    return await stack.enter_async_context(ClientSession(
+        streams[0], streams[1], read_timeout_seconds=timedelta(seconds=_TIMEOUT_SECONDS),
+    ))
+
+
+async def call_mcp_tool(server: McpServer, name: str, arguments: dict[str, Any]) -> ToolResult:
+    """Call a known tool without opening its server during task setup."""
+    try:
+        async with asyncio.timeout(_TIMEOUT_SECONDS), AsyncExitStack() as stack:
+            session = await _open_session(stack, server)
+            await session.initialize()
+            return await _call_tool(session, name, arguments)
+    except Exception as error:
+        raise SandboxError(f"MCP tool '{server.name}/{name}' failed ({type(error).__name__}).") from error
 
 
 async def _discover_tools(
@@ -206,10 +221,14 @@ async def _discover_tools(
 
 def _handler(session: Any, name: str) -> ToolHandler:
     async def invoke(arguments: dict[str, Any], _context: ToolContext) -> ToolResult:
-        result = await session.call_tool(name, arguments)
-        if result.structuredContent is not None:
-            content = json.dumps(result.structuredContent, ensure_ascii=False)
-        else:
-            content = "\n".join(block.text for block in result.content if block.type == "text")
-        return ToolResult(content or "The MCP tool returned no text or structured content.", is_error=result.isError)
+        return await _call_tool(session, name, arguments)
     return invoke
+
+
+async def _call_tool(session: Any, name: str, arguments: dict[str, Any]) -> ToolResult:
+    result = await session.call_tool(name, arguments)
+    if result.structuredContent is not None:
+        content = json.dumps(result.structuredContent, ensure_ascii=False)
+    else:
+        content = "\n".join(block.text for block in result.content if block.type == "text")
+    return ToolResult(content or "The MCP tool returned no text or structured content.", is_error=result.isError)

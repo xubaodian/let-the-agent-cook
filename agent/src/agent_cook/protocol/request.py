@@ -40,7 +40,7 @@ _REQUEST = Draft202012Validator({
 
 @dataclass(frozen=True, slots=True)
 class WebOptions:
-    enabled: bool = False
+    enabled: bool | None = None
     browser_origins: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -95,7 +95,7 @@ class RunRequest:
             skill_directories=tuple(base / item for item in directories),
             mounted_skills=tuple(skills) if skills is not None else None,
             mcp_tools=tuple(data["mcp_tools"]) if "mcp_tools" in data else None,
-            web=WebOptions(web.get("enabled", False), tuple(web.get("browser_origins", ()))),
+            web=WebOptions(web.get("enabled"), tuple(web.get("browser_origins", ()))),
             model=data.get("model"),
             image_model=data.get("image_model"),
             model_api=data.get("model_api"),

@@ -84,10 +84,11 @@ class BackendTest(unittest.IsolatedAsyncioTestCase):
         )
         create = AsyncMock(return_value=session)
         with patch.dict(sys.modules, {"e2b": e2b_sdk(create)}):
-            async with E2BSandboxFactory("fixture-template").open("run-2") as sandbox:
+            async with E2BSandboxFactory("fixture-template", api_key="fixture-e2b-key").open("run-2") as sandbox:
                 result = await sandbox.request("write_file", {"path": "notes.txt", "content": "x"})
 
         self.assertEqual(result, {"path": "notes.txt", "bytes": 1})
+        self.assertEqual(create.call_args.kwargs["api_key"], "fixture-e2b-key")
         self.assertFalse(create.call_args.kwargs["allow_internet_access"])
         self.assertFalse(create.call_args.kwargs["network"]["allow_public_traffic"])
         self.assertEqual(create.call_args.kwargs["metadata"], {"agent_cook_run": "run-2"})

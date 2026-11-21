@@ -1,3 +1,4 @@
+import os
 from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from dataclasses import replace
@@ -25,6 +26,7 @@ from agent_cook.tools.images import register_image_tool
 from agent_cook.tools.public_browser import PublicBrowser
 from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.spec import ToolDefinition
+from agent_cook.tools.web import register_exa_tools
 from agent_cook.tools.workspace import workspace_tools
 
 
@@ -59,6 +61,7 @@ async def run_task(
     plugins: tuple[Plugin, ...] = (),
     mcp_tools: tuple[str, ...] | None = None,
     web: WebOptions = WebOptions(),
+    exa_api_key: str | None = None,
     browser_factory: SandboxFactory | None = None,
     session: Session | None = None,
 ) -> RunResult:
@@ -92,16 +95,20 @@ async def run_task(
                 tool_names = (*tool_names, image_tool)
         servers = tuple(server for plugin in plugins for server in plugin.mcp_servers)
         mcp_names = await register_mcp_tools(resources, registry, servers, selected=mcp_tools)
+        exa_key = (exa_api_key or os.environ.get("EXA_API_KEY", "")).strip()
+        exa_names = register_exa_tools(registry, exa_key) if exa_key and web.enabled is not False else ()
+        mcp_names += exa_names
         tool_names += mcp_names
+        hosted_web = web.enabled is True and not exa_names
         instructions = spec.instructions
-        if web.enabled:
+        if hosted_web or exa_names:
             instructions += "\n\nUse web search to find sources and web fetch to read a known URL. Cite the sources you use."
         if browser_factory is not None:
             instructions += (
                 "\n\nUse Playwright on an approved public origin when reading the page requires interaction or a screenshot."
             )
         spec = replace(
-            spec, tool_names=tool_names, web_enabled=web.enabled,
+            spec, tool_names=tool_names, web_enabled=hosted_web,
             instructions=skills.instructions(instructions) if skills is not None else instructions.strip(),
         )
         hooks = tuple(hook for plugin in plugins for hook in plugin.hooks)
@@ -110,7 +117,7 @@ async def run_task(
             partial(skills.workspace_files, inputs, extra_trees=trees)
             if skills is not None and (skills.names or trees) else inputs
         )
-        if plugins or skills is not None or mcp_tools is not None:
+        if plugins or skills is not None or mcp_tools is not None or exa_names:
             events.emit(
                 "extensions.loaded", plugins=[plugin.name for plugin in plugins],
                 skills=list(skills.names) if skills is not None else [],

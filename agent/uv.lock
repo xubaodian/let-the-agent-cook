@@ -16,6 +16,7 @@ dependencies = [
     { name = "httpx" },
     { name = "jsonschema" },
     { name = "keyring" },
+    { name = "mcp" },
     { name = "openai" },
     { name = "prompt-toolkit" },
     { name = "pyyaml" },
@@ -29,9 +30,6 @@ examples = [
     { name = "openpyxl" },
     { name = "playwright" },
     { name = "python-pptx" },
-]
-mcp = [
-    { name = "mcp" },
 ]
 release = [
     { name = "pyinstaller" },
@@ -48,7 +46,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "jsonschema", specifier = ">=4.23,<5" },
     { name = "keyring", specifier = ">=25.6,<26" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.29,<2" },
+    { name = "mcp", specifier = ">=1.29,<2" },
     { name = "openai", specifier = ">=1.66,<3" },
     { name = "openpyxl", marker = "extra == 'examples'", specifier = "==3.1.5" },
     { name = "playwright", marker = "extra == 'examples'", specifier = "==1.62.0" },

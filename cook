@@ -25,9 +25,9 @@ if [[ "$command_name" == setup ]]; then
         echo "Usage: ./cook setup [--docker]" >&2
         exit 2
     fi
-    if [[ ! -e "$root/.env" ]]; then
-        (umask 077 && set -o noclobber && cat "$root/.env.example" > "$root/.env")
-        echo "Fill in OPENROUTER_API_KEY and OPENROUTER_MODEL in .env."
+    if [[ ! -e "$root/agent-cook.json" ]]; then
+        (umask 077 && set -o noclobber && cat "$root/agent-cook.example.json" > "$root/agent-cook.json")
+        echo "Fill in api_keys.openrouter and models.chat in agent-cook.json."
     fi
     uv sync "${project[@]}"
     if [[ $# -eq 1 ]]; then
