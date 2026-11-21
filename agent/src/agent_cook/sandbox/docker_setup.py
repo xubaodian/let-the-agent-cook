@@ -3,7 +3,9 @@ import sys
 from pathlib import Path
 from shutil import which
 from subprocess import DEVNULL, PIPE, STDOUT, Popen, TimeoutExpired, run
+from time import sleep
 
+from agent_cook.retry import RETRY_DELAYS
 from agent_cook.sandbox.interface import SandboxError
 
 
@@ -44,11 +46,34 @@ def docker_command() -> str:
     return "docker"
 
 
+def docker_transport_failed(detail: str) -> bool:
+    detail = detail.lower()
+    return "permission denied" not in detail and any(marker in detail for marker in (
+        "cannot connect to the docker daemon",
+        "connection refused",
+        "connection reset by peer",
+        "i/o timeout",
+        "context deadline exceeded",
+        "503 service unavailable",
+        "502 bad gateway",
+        "504 gateway timeout",
+    ))
+
+
 def _check(executable: str, *args: str):
-    return run(
-        [executable, *args], stdin=DEVNULL, capture_output=True,
-        timeout=12, encoding="utf-8", errors="replace",
-    )
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            result = run(
+                [executable, *args], stdin=DEVNULL, capture_output=True,
+                timeout=12, encoding="utf-8", errors="replace",
+            )
+        except TimeoutExpired:
+            if delay is None:
+                raise
+        else:
+            if delay is None or not result.returncode or not docker_transport_failed(result.stderr):
+                return result
+        sleep(delay)
 
 
 def check_linux_docker() -> str:

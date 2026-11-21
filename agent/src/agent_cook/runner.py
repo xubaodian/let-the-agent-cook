@@ -17,6 +17,7 @@ from agent_cook.model.openrouter import OPENROUTER_BASE_URL, OpenRouterModel
 from agent_cook.model.openrouter_images import OpenRouterImageGenerator
 from agent_cook.model.openrouter_responses import OpenRouterResponsesModel
 from agent_cook.protocol.request import WebOptions
+from agent_cook.retry import RETRY_DELAYS
 from agent_cook.sandbox.interface import SandboxFactory
 from agent_cook.state.session import Message, Session
 from agent_cook.tools.artifacts import ArtifactExporter
@@ -68,7 +69,13 @@ async def run_task(
     from openai import AsyncOpenAI
 
     async with AsyncExitStack() as resources:
-        client = await resources.enter_async_context(AsyncOpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL))
+        client = await resources.enter_async_context(AsyncOpenAI(
+            api_key=api_key,
+            base_url=OPENROUTER_BASE_URL,
+            max_retries=len(RETRY_DELAYS),
+            # A stalled model request should time out before the run deadline.
+            timeout=spec.timeout_seconds * 0.75,
+        ))
         registry = ToolRegistry()
         tool_names: tuple[str, ...] = ()
         if factory is not None:

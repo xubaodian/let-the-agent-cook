@@ -89,7 +89,7 @@ class PowerPointResponsesTest(unittest.TestCase):
 
                     def client(**kwargs):
                         return AsyncOpenAI(
-                            **kwargs, max_retries=0,
+                            **kwargs,
                             http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
                         )
 

@@ -1,11 +1,16 @@
 import base64
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+from functools import partial
+from math import isfinite
 from typing import TYPE_CHECKING
 
+from agent_cook.retry import retry_transient
 from agent_cook.sandbox.limits import MAX_FILE_BYTES
 
 if TYPE_CHECKING:
-    from openai import AsyncOpenAI
+    from openai import APIStatusError, AsyncOpenAI
 
 
 class ImageGenerationError(RuntimeError):
@@ -37,7 +42,11 @@ class OpenRouterImageGenerator:
             body["resolution"] = resolution
 
         try:
-            response = await self._client.post("/images", cast_to=object, body=body)
+            response = await retry_transient(
+                partial(self._client.post, "/images", cast_to=object, body=body),
+                lambda error: isinstance(error, APIStatusError) and error.status_code == 429,
+                retry_after=_retry_after,
+            )
         except APITimeoutError as error:
             raise ImageGenerationError("OpenRouter image generation timed out.") from error
         except APIConnectionError as error:
@@ -48,6 +57,20 @@ class OpenRouterImageGenerator:
                 "Check the configured image model and its supported options."
             ) from error
         return _decode_image(response)
+
+
+def _retry_after(error: "APIStatusError") -> float:
+    value = error.response.headers.get("Retry-After")
+    if value is None:
+        return 0
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            seconds = (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return 0
+    return seconds if isfinite(seconds) else 0
 
 
 def _decode_image(response: object) -> GeneratedImage:

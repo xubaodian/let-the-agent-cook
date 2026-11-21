@@ -1,11 +1,15 @@
 import base64
 import json
 from collections.abc import Awaitable, Callable, Sequence
+from functools import partial
 from typing import Any
 
-from agent_cook.sandbox.interface import CommandResult, SandboxError
+from agent_cook.retry import retry_transient
+from agent_cook.sandbox.interface import CommandResult, SandboxError, SandboxTransportError
 from agent_cook.sandbox.limits import MAX_FILE_BYTES, MAX_RPC_BYTES, WORKER_VERSION
 from agent_cook.sandbox.paths import workspace_path
+
+_READ_OPERATIONS = frozenset({"download", "list_files", "read_file", "search_files"})
 
 
 class WorkerSandbox:
@@ -23,7 +27,11 @@ class WorkerSandbox:
         ).encode("utf-8")
         if len(payload) > MAX_RPC_BYTES:
             raise SandboxError("The workspace request exceeds the transfer limit.")
-        raw = await self._exchange(payload, timeout_seconds)
+        exchange = partial(self._exchange, payload, timeout_seconds)
+        if operation in _READ_OPERATIONS:
+            raw = await retry_transient(exchange, lambda error: isinstance(error, SandboxTransportError))
+        else:
+            raw = await exchange()
         if len(raw) > MAX_RPC_BYTES:
             raise SandboxError("The workspace response exceeds the transfer limit.")
         try:

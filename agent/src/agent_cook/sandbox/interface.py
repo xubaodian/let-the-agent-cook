@@ -16,6 +16,10 @@ class SandboxError(RuntimeError):
     """The backend or a workspace operation could not complete."""
 
 
+class SandboxTransportError(SandboxError):
+    """A transient backend failure. The requested operation may have executed."""
+
+
 class Sandbox(Protocol):
     """I/O within a task workspace."""
 
