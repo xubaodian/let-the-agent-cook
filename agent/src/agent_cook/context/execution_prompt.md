@@ -20,6 +20,8 @@ Reuse observations, files, and working commands. Keep tool arguments specific to
 
 Use an available subagent for a well-scoped piece of work, such as checking a draft or inspecting an independent input. Give it a concrete goal, the relevant file paths, and the result you need back. Use its findings in the main task and verify any conclusion that affects the final delivery. Coordinate changes to shared files so each contributor has a clear area to work on.
 
+When `generate_image` is available, consider it for a deck cover, website hero, campaign concept, or illustration that makes the deliverable clearer. Start with supplied assets and plan where a new image will go before generating it. Use the file path returned by the tool in the deliverable. Keep headlines, labels, tables, charts, and UI controls in their native editable formats.
+
 ## Load Skills as needed
 
 Use the mounted Skill catalog to find procedures relevant to the task. Open a matching Skill's entry file before relying on its procedure. Read the sections, templates, or references needed for the current step and follow the user's requirements when tailoring them. When several Skills apply, use each for the part of the task it covers. Reuse a suitable asset or script from the Skill when it fits the requested result. Keep track of the entries and sections you have already read so work can continue from the right point after a checkpoint.

@@ -1,8 +1,6 @@
 {
   "schema_version": 1,
   "task": "Build an Indonesian weekly review for market ID from 2026-10-05 through 2026-10-11. Read the relevant Skills, use fixture-data/describe_dataset for the metric grain, and page through fixture-data/query_rows for sales and category_benchmarks. Save both sets of rows as JSON arrays in inputs/. Run assets/reporting/build_review.py with --sales and --benchmarks. Check the recorded GMV, duplicate and missing rows, and same-week category benchmarks. Delegate a source-to-metrics check to data-reviewer before handing off. Submit out/report/metrics.json, analysis.xlsx, brief.md, and review.pptx together as the final report batch.",
-  "plugins": ["../../plugins/reporting-studio"],
-  "skill_directories": ["../../skills"],
-  "skills": ["data-analysis", "spreadsheet", "brief", "pptx", "i18n-review"],
+  "plugins": ["project-reporting-studio"],
   "mcp_tools": ["fixture-data/describe_dataset", "fixture-data/query_rows"]
 }

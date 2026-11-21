@@ -16,11 +16,26 @@ from agent_cook.extensions.mcp import McpServer, read_servers
 from agent_cook.local_files import LocalTree
 from agent_cook.sandbox.limits import MAX_COMMAND_SECONDS, MAX_TEXT_FILE_BYTES
 from agent_cook.sandbox.paths import workspace_path
+from agent_cook.settings import DATA
 
 PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+_EXTENSION = "com.github.xubaodian.agent-cook"
+_PLUGIN_NAME = re.compile(r"(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?")
 _STRING = {"type": "string", "minLength": 1}
 _TOOL = {**_STRING, "pattern": "^[A-Za-z0-9_-]{1,64}$"}
 _HOOKS_PATH = "hooks/hooks.json"
+_OPTIONS = Draft202012Validator({
+    "type": "object",
+    "properties": {
+        "skills": {
+            "type": "array", "uniqueItems": True,
+            "items": {**_STRING, "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+        },
+        "instructions": {**_STRING, "maxLength": 4096},
+        "connect_mcp_by_default": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+})
 _AGENT = Draft202012Validator({
     "type": "object",
     "required": ["name", "description"],
@@ -53,6 +68,26 @@ class Plugin:
     hooks: tuple[HookSpec, ...]
     files: tuple[FileTree, ...]
     mcp_servers: tuple[McpServer, ...]
+    skill_refs: tuple[str, ...] = ()
+    instructions: str = ""
+    description: str = ""
+    connect_mcp_by_default: bool = True
+
+
+def plugin_path(reference: str, base: Path) -> Path:
+    if _PLUGIN_NAME.fullmatch(reference):
+        bundled = DATA / "plugins" / reference
+        if (bundled / "plugin.json").is_file():
+            return bundled
+    return base / Path(reference).expanduser()
+
+
+def bundled_plugins() -> tuple[Plugin, ...]:
+    root = LocalTree(DATA / "plugins")
+    entries, limited = root.entries(".", recursive=False)
+    if limited:
+        raise ValueError("The bundled plugins directory has too many entries.")
+    return load_plugins(tuple(root.root / name for name, kind in entries if kind == "directory"))
 
 
 def load_plugins(directories: tuple[Path, ...]) -> tuple[Plugin, ...]:
@@ -87,9 +122,15 @@ def _load(directory: Path) -> Plugin:
     if (
         manifest.get("$schema") != PLUGIN_SCHEMA
         or not isinstance(name, str) or len(name) > 64
-        or re.fullmatch(r"(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", name) is None
+        or _PLUGIN_NAME.fullmatch(name) is None
     ):
         raise ValueError("plugin.json must declare the Agent Plugins schema and a valid name.")
+    extensions = manifest.get("extensions")
+    options = extensions.get(_EXTENSION, {}) if isinstance(extensions, dict) else {}
+    try:
+        _OPTIONS.validate(options)
+    except ValidationError as error:
+        raise ValueError(f"Invalid '{_EXTENSION}' extension at {error.json_path} in plugin.json.") from None
     entries, limited = source.entries(".", recursive=False)
     if limited:
         raise ValueError("The plugin directory has too many entries.")
@@ -102,7 +143,13 @@ def _load(directory: Path) -> Plugin:
         for path in ("assets", "hooks") if path in dirs
     )
     servers = read_servers(source.root, _read_json(source, "mcp.json")) if kinds.get("mcp.json") == "file" else ()
-    return Plugin(name, source.root / "skills" if "skills" in dirs else None, agents, hooks, files, servers)
+    return Plugin(
+        name, source.root / "skills" if "skills" in dirs else None, agents, hooks, files, servers,
+        skill_refs=tuple(options.get("skills", ())),
+        instructions=options.get("instructions", "").strip(),
+        description=manifest.get("description", ""),
+        connect_mcp_by_default=options.get("connect_mcp_by_default", True),
+    )
 
 
 def _read_json(source: LocalTree, path: str) -> dict[str, Any]:

@@ -19,6 +19,8 @@ from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.delivery import publish_results, result_snapshots
 from agent_cook.events.journal import RunEvents, write_jsonl
+from agent_cook.extensions.plugins import bundled_plugins, load_plugins, plugin_path
+from agent_cook.extensions.skills import SkillCatalog
 from agent_cook.local_files import PortablePaths, collect_inputs, portable_path
 from agent_cook.model.catalog import MODEL_APIS, ModelCatalog
 from agent_cook.onboarding import connect, read_key
@@ -134,23 +136,20 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
     browser_factory = (
         make_sandbox(allow_network=True) if make_sandbox and request.web.browser_origins else None
     )
-    plugins = ()
-    if request.plugins:
-        from agent_cook.extensions.plugins import load_plugins
-
-        plugins = load_plugins(request.plugins)
+    plugins = load_plugins(request.plugins)
     skill_directories = (*request.skill_directories, *(
         plugin.skills_dir for plugin in plugins if plugin.skills_dir is not None
     ))
-    skills = None
-    if plugins or skill_directories or request.mounted_skills is not None:
-        from agent_cook.extensions.skills import SkillCatalog
-
-        skills = SkillCatalog(skill_directories, request.mounted_skills)
-    if factory is None and (
-        (skills is not None and skills.names) or any(plugin.hooks or plugin.files for plugin in plugins)
-    ):
+    referenced = tuple(name for plugin in plugins for name in plugin.skill_refs)
+    if factory is None and (referenced or any(plugin.hooks or plugin.files for plugin in plugins)):
         raise ValueError("Mounted skills, plugin files, and hooks require --sandbox.")
+    skills = None
+    if factory is not None or skill_directories or request.mounted_skills is not None:
+        skills = SkillCatalog(
+            skill_directories, request.mounted_skills, include_bundled=factory is not None, required=referenced,
+        )
+        if factory is None and skills.names:
+            raise ValueError("Mounted skills, plugin files, and hooks require --sandbox.")
     return spec, factory, {
         "model_api": model_api, "model_apis": catalog.chat_apis,
         "image_model": image_model, "skills": skills, "plugins": plugins,
@@ -182,6 +181,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument("--config", dest="config_path", type=Path, help="Use a JSON file in place of the user configuration")
     parser.add_argument("--models-config", type=Path, help="Use a custom JSON model catalog")
     parser.add_argument("--list-models", action="store_true", help="Print the configured chat and image models as JSON")
+    parser.add_argument("--list-plugins", action="store_true", help="List the bundled plugins and their skill references")
     parser.add_argument("-m", "--model", help="Chat model ID (or set OPENROUTER_MODEL)")
     parser.add_argument("--model-api", choices=MODEL_APIS, help="OpenRouter chat protocol (or set OPENROUTER_MODEL_API)")
     parser.add_argument("--image-model", help="Image API model ID (or set OPENROUTER_IMAGE_MODEL)")
@@ -204,8 +204,8 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument(
         "--skills-dir", action="append", type=Path, default=[], help="Load a directory of Skill packages",
     )
-    parser.add_argument("--skill", action="append", help="Mount a named Skill. Repeat to select several.")
-    parser.add_argument("--plugin", action="append", type=Path, default=[], help="Enable a local plugin directory")
+    parser.add_argument("--skill", action="append", help="Select a Skill by name. By default all discovered skills are mounted.")
+    parser.add_argument("--plugin", action="append", default=[], help="Enable a bundled plugin by name or a local plugin directory")
     parser.add_argument("--mcp-tool", action="append", help="Enable an MCP tool by server/tool. Repeat to select several.")
     parser.add_argument(
         "--context-window", type=int, help="Context window in tokens for the selected model",
@@ -230,8 +230,9 @@ def _paths(args: argparse.Namespace, directory: Path) -> None:
     for key in ("request", "config_path", "models_config", "trace", "data_dir"):
         if (path := getattr(args, key, None)) is not None:
             setattr(args, key, directory / path.expanduser())
-    for key in ("input", "plugin", "skills_dir"):
+    for key in ("input", "skills_dir"):
         setattr(args, key, [directory / path.expanduser() for path in getattr(args, key)])
+    args.plugin = [plugin_path(reference, directory) for reference in args.plugin]
 
 
 def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCatalog:
@@ -576,6 +577,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser(mode)
     args = parser.parse_args(words)
     try:
+        if args.list_plugins:
+            print(json.dumps([{
+                "name": plugin.name, "description": plugin.description, "skills": plugin.skill_refs,
+            } for plugin in bundled_plugins()], indent=2))
+            return 0
         directory = args.cd
         if directory is None:
             directory = Path.home() / "Agent Cook" if args.app else Path.cwd()

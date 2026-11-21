@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "reporting-studio",
+  "version": "0.1.0",
+  "description": "Build presentations, briefings, and portable sites from verified sources.",
+  "extensions": {
+    "com.github.xubaodian.agent-cook": {
+      "skills": ["pptx", "static-site", "data-analysis", "brief", "research-synthesis", "image-assets"],
+      "instructions": "Use a shared set of verified facts and metrics when the brief spans multiple formats. Shape the report around the audience and verify each delivered format. For out/site/index.html, run a passing Playwright text assertion and capture a current PNG under out/site/ before submission.",
+      "connect_mcp_by_default": false
+    }
+  }
+}

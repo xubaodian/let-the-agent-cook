@@ -25,8 +25,11 @@ Agent Cook 是一个接入 OpenRouter 的终端助手。你可以用它对话、
 | `agent-cook exec "任务"` | 执行一次任务。用 `--input "路径"` 添加文件或文件夹，可重复传入。 |
 | `agent-cook resume --last` | 继续当前工作目录的最近一次会话。 |
 | `agent-cook doctor` | 检查模型配置和本机沙箱。 |
+| `agent-cook --list-plugins` | 查看两个 Studio 及其引用的 Skill。 |
 
 交互时用 `@路径` 或 `@"带空格的路径"` 选择文件或文件夹。Agent 处理副本，交付后会打印结果目录的路径。用 `/open` 打开当前会话的结果，`/model` 查看或切换模型，`/help` 查看其他命令。
+
+默认可用 PPT、网站构建、数据分析、汇报材料、资料调研和视觉素材 6 个 Skill。需要 Studio 的工作流程时，可用 `agent-cook --plugin reporting-studio` 或 `agent-cook --plugin project-reporting-studio` 启动。 [Skill 和 Plugin 用法](docs/plugins.md)
 
 ## 使用示例
 

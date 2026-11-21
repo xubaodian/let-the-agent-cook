@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "project-reporting-studio",
+  "version": "0.1.0",
+  "description": "Prepare project updates and review slide decks, supporting data, and handoff materials.",
+  "extensions": {
+    "com.github.xubaodian.agent-cook": {
+      "skills": ["pptx", "data-analysis", "brief"],
+      "instructions": "Build project updates around milestone progress, risks and dependencies, decisions needed, and next actions. Use the data reviewer when source rows and metrics need reconciliation. For files under out/report/, write out/report/validation.json with a files array of all workspace-relative deliverable paths and a checks object whose values reflect the checks you ran.",
+      "connect_mcp_by_default": false
+    }
+  }
+}

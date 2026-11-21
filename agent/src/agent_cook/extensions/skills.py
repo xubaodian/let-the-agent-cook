@@ -7,6 +7,7 @@ from pathlib import Path
 from agent_cook.extensions.files import FileTree, collect_workspace_files
 from agent_cook.extensions.frontmatter import read_frontmatter
 from agent_cook.local_files import LocalTree
+from agent_cook.settings import DATA
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,30 +24,42 @@ class _Skill:
 class SkillCatalog:
     """Discover Skill metadata and supply package files to the task workspace."""
 
-    def __init__(self, directories: Iterable[Path], mount: tuple[str, ...] | None = None) -> None:
+    def __init__(
+        self, directories: Iterable[Path], mount: tuple[str, ...] | None = None, *,
+        include_bundled: bool = False, required: Iterable[str] = (),
+    ) -> None:
         self._skills: dict[str, _Skill] = {}
-        selected = None if mount is None else set(mount)
+        referenced = set(required)
+        selected = None if mount is None else set(mount) | referenced
         for directory in directories:
-            source = LocalTree(directory)
-            entries, scan_limited = source.entries(".", recursive=False)
-            if scan_limited:
-                raise ValueError(f"The skills directory '{directory}' has too many entries.")
-            for name, kind in entries:
-                if kind != "directory" or (selected is not None and name not in selected):
-                    continue
-                entry = f"{name}/SKILL.md"
-                try:
-                    with source.open_file(entry) as stream:
-                        description = _description(read_frontmatter(stream), name)
-                except FileNotFoundError:
-                    continue
-                except (OSError, ValueError) as error:
-                    raise ValueError(f"Invalid skill '{entry}' in '{directory}': {error}") from error
-                if name in self._skills:
-                    raise ValueError(f"The skill name '{name}' is registered more than once.")
-                self._skills[name] = _Skill(name, description, source)
-        if selected is not None and (missing := selected - self._skills.keys()):
+            self._discover(directory, selected)
+        if include_bundled:
+            self._discover(DATA / "skills", selected, fallback=True)
+        expected = selected if selected is not None else referenced
+        if missing := expected - self._skills.keys():
             raise ValueError(f"Unknown mounted skills: {', '.join(sorted(missing))}.")
+
+    def _discover(self, directory: Path, selected: set[str] | None, *, fallback: bool = False) -> None:
+        source = LocalTree(directory)
+        entries, scan_limited = source.entries(".", recursive=False)
+        if scan_limited:
+            raise ValueError(f"The skills directory '{directory}' has too many entries.")
+        for name, kind in entries:
+            if kind != "directory" or (selected is not None and name not in selected):
+                continue
+            if fallback and name in self._skills:
+                continue
+            entry = f"{name}/SKILL.md"
+            try:
+                with source.open_file(entry) as stream:
+                    description = _description(read_frontmatter(stream), name)
+            except FileNotFoundError:
+                continue
+            except (OSError, ValueError) as error:
+                raise ValueError(f"Invalid skill '{entry}' in '{directory}': {error}") from error
+            if name in self._skills:
+                raise ValueError(f"The skill name '{name}' is registered more than once.")
+            self._skills[name] = _Skill(name, description, source)
 
     @property
     def names(self) -> tuple[str, ...]:
