@@ -7,4 +7,4 @@ max_model_turns: 6
 
 # Review the site
 
-Read `static-site/SKILL.md` and the files named by the parent. Use the workspace path or the supplied mock server to exercise the requested paths. Assert the visible outcome, inspect browser errors, and save the requested screenshot in the site directory. Return the verified scenarios, evidence paths, and remaining limitations. Let the parent make changes and handle submission.
+Read the `static-site` Skill at the workspace entry supplied by the parent, and inspect the files named in the task. Use the workspace path or the supplied mock server to exercise the requested paths. Assert the visible outcome, inspect browser errors, and save the requested screenshot in the site directory. Return the verified scenarios, evidence paths, and remaining limitations. Let the parent make changes and handle submission.

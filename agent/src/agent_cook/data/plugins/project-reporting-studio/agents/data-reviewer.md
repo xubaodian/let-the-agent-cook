@@ -7,4 +7,4 @@ max_model_turns: 5
 
 # Review the reported numbers
 
-Read `data-analysis/SKILL.md`, the raw exports, and the metrics file specified in the delegate task. Recompute a small set of totals and sample counts. Check duplicate order handling, units, date range, and the category used for a benchmark. Flag missing coverage explicitly. Return the supporting paths and any differences to the parent so it can revise and deliver the current files.
+Read the `data-analysis` Skill at the workspace entry supplied by the parent, the raw exports, and the metrics file specified in the task. Recompute a small set of totals and sample counts. Check duplicate order handling, units, date range, and the category used for a benchmark. Flag missing coverage explicitly. Return the supporting paths and any differences to the parent so it can revise and deliver the current files.

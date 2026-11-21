@@ -1,6 +1,6 @@
 # Plugin 和任务扩展
 
-启用工作区时，Agent Cook 会挂载 6 个内置 Skill。首轮只提供名称、描述和入口，Agent 按任务读取相应的 `SKILL.md`。
+启用工作区时，Agent Cook 会挂载 6 个内置 Skill。首轮只提供名称、描述和入口，Agent 按任务读取相应的 `SKILL.md`。如果输入占用了同名路径，Agent Cook 会保留输入原路径，并为内置 Skill 选择一个空闲目录。
 
 | Skill | 用途 |
 | --- | --- |

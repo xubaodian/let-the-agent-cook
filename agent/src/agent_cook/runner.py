@@ -118,12 +118,11 @@ async def run_task(
             instructions += (
                 "\n\nUse Playwright on an approved public origin when reading the page requires interaction or a screenshot."
             )
-        spec = replace(
-            spec, tool_names=tool_names, web_enabled=hosted_web,
-            instructions=skills.instructions(instructions) if skills is not None else instructions.strip(),
-        )
         hooks = tuple(hook for plugin in plugins for hook in plugin.hooks)
         trees = tuple(tree for plugin in plugins for tree in plugin.files)
+        if skills is not None:
+            instructions = skills.instructions(instructions, bundled_prefix=skills.bundled_prefix(inputs, trees))
+        spec = replace(spec, tool_names=tool_names, web_enabled=hosted_web, instructions=instructions.strip())
         workspace_inputs = (
             partial(skills.workspace_files, inputs, extra_trees=trees)
             if skills is not None and (skills.names or trees) else inputs

@@ -1,5 +1,6 @@
 import json
 import re
+import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ class _Skill:
     name: str
     description: str
     source: LocalTree
+    bundled: bool
 
     @property
     def entry(self) -> str:
@@ -59,20 +61,35 @@ class SkillCatalog:
                 raise ValueError(f"Invalid skill '{entry}' in '{directory}': {error}") from error
             if name in self._skills:
                 raise ValueError(f"The skill name '{name}' is registered more than once.")
-            self._skills[name] = _Skill(name, description, source)
+            self._skills[name] = _Skill(name, description, source, bundled=fallback)
 
     @property
     def names(self) -> tuple[str, ...]:
         return tuple(sorted(self._skills))
 
-    def instructions(self, base: str) -> str:
+    def bundled_prefix(
+        self, inputs: Iterable[str], extra_trees: Iterable[FileTree],
+    ) -> str:
+        paths = (*inputs, *(tree.directory for tree in extra_trees))
+        occupied = {unicodedata.normalize("NFC", path.partition("/")[0].casefold()) for path in paths}
+        if not any(skill.bundled and skill.name in occupied for skill in self._skills.values()):
+            return ""
+        occupied.update(self._skills)
+        directory = "skills"
+        suffix = 1
+        while directory in occupied:
+            suffix += 1
+            directory = f"skills-{suffix}"
+        return f"{directory}/"
+
+    def instructions(self, base: str, *, bundled_prefix: str = "") -> str:
         if not self._skills:
             return base
         metadata = [
             {
                 "name": skill.name,
                 "description": skill.description,
-                "entry": skill.entry,
+                "entry": bundled_prefix + skill.entry if skill.bundled else skill.entry,
             }
             for skill in sorted(self._skills.values(), key=lambda skill: skill.name)
         ]
@@ -86,8 +103,18 @@ class SkillCatalog:
     def workspace_files(
         self, inputs: Mapping[str, bytes], *, extra_trees: Iterable[FileTree] = (),
     ) -> dict[str, bytes]:
-        skills = (FileTree(skill.source, skill.name, skill.entry) for skill in self._skills.values())
-        return collect_workspace_files(inputs, (*skills, *extra_trees))
+        trees = tuple(extra_trees)
+        prefix = self.bundled_prefix(inputs, trees)
+        custom: list[FileTree] = []
+        bundled: list[FileTree] = []
+        for skill in self._skills.values():
+            target = bundled if skill.bundled else custom
+            target.append(FileTree(skill.source, skill.name, skill.entry))
+        files = collect_workspace_files(inputs, (*custom, *trees))
+        # The installed guides have their own transfer allowance and cannot shadow task files.
+        for path, contents in collect_workspace_files({}, bundled).items():
+            files[prefix + path] = contents
+        return files
 
 
 def _description(metadata: dict, directory_name: str) -> str:
