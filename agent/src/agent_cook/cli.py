@@ -26,12 +26,11 @@ from agent_cook.protocol.events import RunEvent
 from agent_cook.protocol.request import RunRequest
 from agent_cook.runner import run_task
 from agent_cook.sandbox.docker import DEFAULT_DOCKER_IMAGE, DockerSandboxFactory
-from agent_cook.sandbox.docker_setup import (
-    DockerSetupError, check_linux_docker, image_available, prepare_docker, source_workspace,
-)
+from agent_cook.sandbox.docker_setup import DockerSetupError, prepare_docker, source_workspace
 from agent_cook.sandbox.e2b import E2BSandboxFactory
 from agent_cook.sandbox.interface import SandboxError, SandboxFactory
 from agent_cook.sandbox.limits import MAX_TRANSFER_BYTES
+from agent_cook.sandbox.native.factory import NativeSandboxFactory
 from agent_cook.settings import DATA, AgentConfig, model_catalog, release_image, saved_model
 from agent_cook.state.local import LocalSession, LocalSessions
 from agent_cook.terminal import file_mentions, prompt_reader, show_progress
@@ -112,9 +111,10 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
     spec = AgentSpec(
         model=chat_model, max_model_turns=args.max_turns, timeout_seconds=args.timeout,
         context_policy=replace(DEFAULT_CONTEXT_POLICY, context_window=args.context_window),
+        require_submission=False if args.sandbox == "native" else None,
     )
-    if request.web.browser_origins and args.sandbox is None:
-        raise ValueError("web.browser_origins requires --sandbox for the separate browser worker.")
+    if request.web.browser_origins and args.sandbox not in ("docker", "e2b"):
+        raise ValueError("web.browser_origins requires a Docker or E2B server workspace. The local CLI supports web_fetch and HTML preview.")
     make_sandbox = None
     if args.sandbox == "docker":
         make_sandbox = partial(DockerSandboxFactory, args.docker_image)
@@ -128,7 +128,9 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
             api_key=key,
             lifetime_seconds=ceil(spec.timeout_seconds) + 60,
         )
-    factory = make_sandbox(allow_network=args.sandbox_network) if make_sandbox else None
+    factory = NativeSandboxFactory() if args.sandbox == "native" else (
+        make_sandbox(allow_network=args.sandbox_network) if make_sandbox else None
+    )
     browser_factory = (
         make_sandbox(allow_network=True) if make_sandbox and request.web.browser_origins else None
     )
@@ -161,7 +163,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     name = "agent-cook" if mode == "local" else f"agent-cook {mode}"
     parser = argparse.ArgumentParser(
         prog=name, description="Run tasks with your OpenRouter model.",
-        epilog="Commands: exec, resume, doctor, docker, serve. Run without a task to start an interactive session.",
+        epilog="Commands: exec, resume, doctor, serve. Run without a task to start an interactive session.",
     )
     parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
     if mode in ("local", "exec"):
@@ -186,9 +188,16 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     if mode in ("local", "exec"):
         parser.add_argument("--json", action="store_true", help="Stream JSONL run events on stdout")
     parser.add_argument("--trace", type=Path, help="Write the run to a new JSONL file at this path")
-    parser.add_argument("--sandbox", choices=("docker", "e2b", "none"), help="Enable task workspace tools")
-    parser.add_argument("--docker-image", help="Use a specific prebuilt sandbox image")
-    parser.add_argument("--sandbox-network", action=argparse.BooleanOptionalAction, help="Allow sandbox networking")
+    service = mode in ("serve", "docker")
+    parser.add_argument(
+        "--sandbox", choices=("docker", "e2b", "none") if service else ("native", "none"),
+        help="Select the task workspace backend",
+    )
+    if service:
+        parser.add_argument("--docker-image", help="Use a specific prebuilt server workspace image")
+        parser.add_argument("--sandbox-network", action=argparse.BooleanOptionalAction, help="Allow workspace networking")
+    else:
+        parser.set_defaults(docker_image=None, sandbox_network=False)
     parser.add_argument("--input", action="append", type=Path, default=[], help="Copy a local file or folder into the workspace")
     parser.add_argument(
         "--skills-dir", action="append", type=Path, default=[], help="Load a directory of Skill packages",
@@ -225,13 +234,20 @@ def _paths(args: argparse.Namespace, directory: Path) -> None:
 
 def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCatalog:
     config = args.config = AgentConfig.load(args.config_path)
+    args.service = mode in ("serve", "docker")
     args.sandbox = args.sandbox or os.environ.get("AGENT_COOK_SANDBOX", "").strip() or config.sandbox.get("backend")
-    if args.sandbox_network is None:
-        args.sandbox_network = config.sandbox.get("network", False)
-    args.release_image = release_image()
-    args.docker_image = (
-        args.docker_image or config.sandbox.get("docker_image") or args.release_image or DEFAULT_DOCKER_IMAGE
-    )
+    if args.service:
+        if args.sandbox == "native":
+            args.sandbox = None
+        if args.sandbox_network is None:
+            args.sandbox_network = config.sandbox.get("network", False)
+        args.release_image = release_image()
+        args.docker_image = (
+            args.docker_image or config.sandbox.get("docker_image") or args.release_image or DEFAULT_DOCKER_IMAGE
+        )
+    elif args.sandbox in ("docker", "e2b"):
+        # Docker-era user settings are still useful to serve. Local tasks use native isolation.
+        args.sandbox = "native"
     for name, default in (("context_window", DEFAULT_CONTEXT_POLICY.context_window), ("max_turns", 8), ("timeout", 120)):
         if getattr(args, name) is None:
             setattr(args, name, config.run.get(name, default))
@@ -256,18 +272,17 @@ def _request(args: argparse.Namespace, task: str) -> RunRequest:
     )
 
 
-def _set_sandbox(args: argparse.Namespace, selected: str | None, *, has_inputs: bool = False) -> None:
-    if selected not in (None, "none", "docker", "e2b"):
-        raise ValueError("The task sandbox must be docker, e2b or none.")
-    args.sandbox = None if selected == "none" else selected or ("docker" if has_inputs else None)
+def _set_sandbox(args: argparse.Namespace, selected: str | None) -> None:
+    backends = ("docker", "e2b", "none") if args.service else ("native", "none")
+    if selected is not None and selected not in backends:
+        raise ValueError("Choose a task sandbox from " + ", ".join(backends) + ".")
+    args.sandbox = None if selected == "none" else selected or (None if args.service else "native")
 
 
 def _execute(args, directory, prepared, task, api_key, inputs, *, observer=None, **extra):
     if inputs and prepared[1] is None:
-        raise ValueError("Input files require --sandbox docker or --sandbox e2b.")
+        raise ValueError("Input files require the local workspace.")
     spec, factory, options = prepared
-    if args.sandbox == "docker":
-        _prepare_workspace(args)
     run_id = uuid4().hex
     trace = args.trace or directory / ".agent-cook" / "runs" / f"{run_id}.jsonl"
     result = asyncio.run(_run(
@@ -325,8 +340,8 @@ def _show_key(config: AgentConfig, provider: str) -> None:
 def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalog, resume: bool) -> int:
     store = LocalSessions(directory / ".agent-cook" / "sessions.sqlite3")
     saved = store.load(args.session_id) if resume else LocalSession()
-    selected = args.sandbox or saved.sandbox
-    _set_sandbox(args, selected, has_inputs=bool(args.input or saved.inputs or saved.results))
+    selected = args.sandbox or ("native" if saved.sandbox in ("docker", "e2b") else saved.sandbox)
+    _set_sandbox(args, selected)
     args.session_model = saved.model
     args.session_image_model = saved.image_model
     terminal = sys.stdin.isatty() and sys.stdout.isatty()
@@ -398,8 +413,8 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                     except ValueError as error:
                         _failure(error)
                 else:
-                    print(selected or "auto (Docker with selected files)")
-            elif command in ("/setup", "/key", "/model", "/config", "/docker", "/example", "/open"):
+                    print(selected or "native")
+            elif command in ("/setup", "/key", "/model", "/config", "/example", "/open"):
                 try:
                     if command == "/setup":
                         setup()
@@ -429,9 +444,6 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                         print(f"Current model  {_chat_model(args, catalog) or 'not configured'}")
                         _show_key(args.config, "openrouter")
                         _show_key(args.config, "exa")
-                    elif command == "/docker":
-                        _prepare_workspace(args, start=True)
-                        print("The Docker workspace is ready.")
                     elif command == "/example":
                         path = _example(directory)
                         quoted = json.dumps(path.as_posix(), ensure_ascii=False)
@@ -448,7 +460,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                 print(
                     "Use @path or @\"path with spaces\" for a file or folder. "
                     "Commands: /setup, /key [openrouter|exa], /model [id], /config, "
-                    "/docker, /example, /open, /files, /sandbox [backend], /new, /exit."
+                    "/example, /open, /files, /sandbox [native|none], /new, /exit."
                 )
             else:
                 print(f"Unknown command {command}. Use /help.", file=sys.stderr)
@@ -460,37 +472,19 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
             inputs = {**saved.inputs, **added}
             staged = {**saved.inputs, **saved.results, **added}
             _stage(staged)
-            _set_sandbox(args, selected, has_inputs=bool(paths or staged))
+            _set_sandbox(args, selected)
             if paths and args.sandbox is None:
-                raise ValueError("Selected files and folders require --sandbox docker or --sandbox e2b.")
+                raise ValueError("Selected files and folders require the local workspace.")
             request = _request(args, task)
             if terminal and (not _api_key(args.config, required=False) or not _chat_model(args, catalog, request.model)):
                 setup()
             prepared = _prepare(args, request, catalog)
             spec, _, options = prepared
             history = saved.continue_history(spec.model)
-            while True:
-                try:
-                    result, trace, delivered = _execute(
-                        args, directory, prepared, request.task, _api_key(args.config), staged,
-                        observer=show_progress, session=history,
-                    )
-                    break
-                except DockerSetupError as error:
-                    if not terminal:
-                        raise
-                    print(error, file=sys.stderr)
-                    if error.startable:
-                        if read("Prepare Docker [Enter], or type cancel: ").strip():
-                            raise KeyboardInterrupt from None
-                        try:
-                            _prepare_workspace(args, start=True)
-                        except DockerSetupError as setup_error:
-                            print(setup_error, file=sys.stderr)
-                        else:
-                            continue
-                    if read("Press Enter to retry this task after Docker is ready, or type cancel: ").strip():
-                        raise KeyboardInterrupt from None
+            result, trace, delivered = _execute(
+                args, directory, prepared, request.task, _api_key(args.config), staged,
+                observer=show_progress, session=history,
+            )
             snapshots = saved.results
             if delivered is not None:
                 try:
@@ -522,24 +516,14 @@ def _doctor(args: argparse.Namespace, catalog: ModelCatalog) -> int:
         "OpenRouter API key configured": bool(_api_key(args.config, required=False)),
         "Chat model configured": bool(_chat_model(args, catalog)),
     }
-    if args.sandbox == "docker":
+    if args.sandbox == "native":
         try:
-            executable = check_linux_docker()
-            checks["Docker Linux engine"] = True
-            checks["Sandbox image"] = image_available(executable, args.docker_image)
-        except DockerSetupError as error:
-            checks["Docker workspace"] = False
+            asyncio.run(NativeSandboxFactory().probe())
+        except SandboxError as error:
+            checks["Native process isolation"] = False
             print(error, file=sys.stderr)
-        if checks.get("Sandbox image") is False:
-            if args.docker_image == args.release_image:
-                print("The first Docker task will download the workspace image.", file=sys.stderr)
-            elif args.docker_image == DEFAULT_DOCKER_IMAGE and source_workspace() is not None:
-                print("The first Docker task will build the workspace image.", file=sys.stderr)
-            else:
-                print("Install the selected workspace image or choose another with --docker-image.", file=sys.stderr)
-    if args.sandbox == "e2b":
-        checks["E2B SDK"] = bool(find_spec("e2b"))
-        checks["E2B credentials and template"] = bool(args.config.api_key("e2b") and args.config.e2b_template)
+        else:
+            checks["Native process isolation"] = True
     for label, available in checks.items():
         print(f"{'OK' if available else 'Missing'}  {label}")
     return 0 if all(checks.values()) else 1
@@ -609,7 +593,7 @@ def main(argv: list[str] | None = None) -> int:
             if getattr(args, "json", False):
                 raise ValueError("Use exec --json for machine-readable output.")
             return _interactive(args, directory, catalog, mode == "resume")
-        _set_sandbox(args, args.sandbox, has_inputs=bool(args.input))
+        _set_sandbox(args, args.sandbox)
         if args.request is not None and (
             getattr(args, "task", None) is not None or args.plugin or args.skills_dir or args.skill or args.mcp_tool
         ):
@@ -635,7 +619,7 @@ def main(argv: list[str] | None = None) -> int:
         request = _request(args, task)
         prepared = _prepare(args, request, catalog)
         if args.input and prepared[1] is None:
-            raise ValueError("Selected files and folders require --sandbox docker or --sandbox e2b.")
+            raise ValueError("Selected files and folders require the local workspace.")
         inputs = collect_inputs(args.input)
     except (OSError, ValueError, sqlite3.Error) as error:
         parser.error(str(error))

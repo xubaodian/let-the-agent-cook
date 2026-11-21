@@ -43,17 +43,16 @@ class ModelCatalogTest(unittest.TestCase):
                 "run": {"max_turns": 12, "timeout": 180},
             }), encoding="utf-8")
             cases = (
-                ({}, [], "config-key", "config-exa-key", "config/chat", "config/image", 12, True),
+                ({}, [], "config-key", "config-exa-key", "config/chat", "config/image", 12),
                 ({"OPENROUTER_API_KEY": "env-key", "EXA_API_KEY": "env-exa-key", "OPENROUTER_MODEL": "env/chat"},
-                 ["--image-model", "cli/image", "--max-turns", "9", "--no-sandbox-network"],
-                 "env-key", "env-exa-key", "env/chat", "cli/image", 9, False),
+                 ["--image-model", "cli/image", "--max-turns", "9"],
+                 "env-key", "env-exa-key", "env/chat", "cli/image", 9),
             )
-            for env, args, key, exa, chat, image, max_turns, network in cases:
+            for env, args, key, exa, chat, image, max_turns in cases:
                 with (
                     self.subTest(chat=chat), patch.dict(os.environ, env, clear=True),
                     patch("agent_cook.settings.settings_directory", return_value=config.parent),
-                    patch("agent_cook.cli.DockerSandboxFactory") as factory,
-                    patch("agent_cook.cli.prepare_docker"),
+                    patch("agent_cook.cli.NativeSandboxFactory") as factory,
                     patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=RunResult("run", "Done.")) as run,
                     redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()),
                 ):
@@ -64,7 +63,7 @@ class ModelCatalogTest(unittest.TestCase):
                 self.assertEqual(run.await_args.kwargs["exa_api_key"], exa)
                 self.assertEqual(run.await_args.kwargs["image_model"], image)
                 self.assertEqual(run.await_args.kwargs["model_api"], "responses")
-                factory.assert_called_once_with("config/sandbox", allow_network=network)
+                factory.assert_called_once_with()
 
     def test_list_models_has_no_defaults_without_user_configuration(self):
         with patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()) as stdout:
@@ -137,10 +136,9 @@ class ModelCatalogTest(unittest.TestCase):
                     self.subTest(chat=chat_model, image=image_model),
                     patch.dict(os.environ, {**environment, **env}, clear=True),
                     patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=run_result) as run,
-                    patch("agent_cook.cli.prepare_docker"),
                     redirect_stdout(io.StringIO()),
                     redirect_stderr(io.StringIO()),
                 ):
-                    self.assertEqual(main(["--models-config", str(catalog), "--sandbox", "docker", *args]), 0)
+                    self.assertEqual(main(["--models-config", str(catalog), "--sandbox", "native", *args]), 0)
                     self.assertEqual(run.await_args.args[0].model, chat_model)
                     self.assertEqual(run.await_args.kwargs["image_model"], image_model)

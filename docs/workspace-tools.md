@@ -1,6 +1,6 @@
 # 工作区工具与沙箱
 
-模型调用的是一套工作区工具。`ToolRegistry` 检查工具授权和参数，处理函数取得当前 Run 的 `Sandbox`。Docker 和 E2B 负责创建环境、传输请求和回收资源，环境内使用同一份 Python worker。文件、命令和浏览器因此可以共享同一个工作区。
+模型调用的是一套工作区工具。`ToolRegistry` 检查工具授权和参数，处理函数取得当前 Run 的 `Sandbox`。本地后端和服务端的 Docker、E2B 共用文件操作与交付协议。文件、命令和浏览器因此可以共享同一个工作区。
 
 ```mermaid
 flowchart TD
@@ -8,9 +8,11 @@ flowchart TD
     R -->|"按需获取并回收"| S["Sandbox 接口"]
     T --> H["工作区工具"]
     H --> S
+    S --> N["原生进程隔离"]
     S --> D["Docker"]
     S --> E["E2B"]
-    D --> W["共用工作区执行模块"]
+    N --> W["共用工作区操作"]
+    D --> W
     E --> W
     H --> A["产物导出"]
 ```
@@ -34,12 +36,12 @@ flowchart TD
 | `search_files` | 按 glob 找文件，可选字面文本查询并返回行号。文本搜索会跳过常见依赖目录和二进制文件。 |
 | `write_file` | 原子写入整份 UTF-8 文本，按需创建父目录。`overwrite` 可以控制覆盖。 |
 | `copy_file` | 复制工作区里的单个文件，支持二进制，默认保留已有目标。 |
-| `run_command` | 用 `argv`、`cwd` 和 `timeout_seconds` 运行 Python、Node.js 或其他镜像内程序。返回退出码、stdout、stderr、超时与截断状态。 |
-| `playwright` | 预览工作区 HTML 或沙箱内的环回 URL，也可访问任务配置的公网 HTTPS 页面。可执行点击、填值、按键、文本断言并保存 PNG。预览本地服务时可用 `server_argv` 启动临时服务。 |
+| `run_command` | 用 `argv`、`cwd` 和 `timeout_seconds` 运行 Python、Node.js 或后端提供的系统程序。返回退出码、stdout、stderr、超时与截断状态。 |
+| `playwright` | 预览工作区 HTML，支持点击、填值、按键、文本断言和 PNG 截图。服务端后端还支持临时测试服务器和允许列表内的公网 HTTPS 页面。 |
 | `generate_image` | 用配置的 OpenRouter 图片模型生成一张图，返回工作区路径、格式、字节数和模型 ID。 |
 | `submit_results` | 批量导出指定文件，返回 `ArtifactRef` 并记录产物和 UI 附件。随后 Agent 可以继续总结结果。 |
 
-`run_command` 统一了命令执行入口。需要 shell 时，可以在 `argv` 中显式选择 `bash`。工作目录和执行超时由 worker 校验，命令超时会结束该进程组并返回已捕获的输出。[OpenAI Shell 工具指南](https://developers.openai.com/api/docs/guides/tools-shell)
+`run_command` 统一了命令执行入口。需要 shell 时，可以在 `argv` 中显式选择当前系统的 Shell，例如 macOS 和 Linux 的 `bash`、Windows 的 `cmd`。工作目录和超时由沙箱校验。[OpenAI Shell 工具指南](https://developers.openai.com/api/docs/guides/tools-shell)
 
 常规文件操作使用工作区相对路径。`playwright` 适合验证 Agent 生成的本地网页和启动的测试服务器，截图写回工作区。用 `submit_results` 选出交付文件，批次在全部读取成功后才出现在产物目录中。
 
@@ -63,20 +65,20 @@ flowchart TD
 
 `web.browser_origins` 可以独立配置，填写允许访问的 HTTPS 来源。Playwright 继续用 `url`、`actions` 和可选的 `screenshot` 查询公网网页。首次公网调用会启动独立的 Docker 或 E2B 浏览器沙箱。代理核对连接来源和目标 IP，浏览器拦截常规页面请求，只放行 GET 和 HEAD。截图写回任务工作区，之后可以通过 `submit_results` 提交。浏览器访问的页面记录在 `browser.page_read`。
 
-只使用搜索和抓取时，直接用 `--request` 运行即可。配置了公网浏览器来源时，选择 `--sandbox docker` 或 `--sandbox e2b`，并构建含新版 worker 的镜像。任务 Shell 的出网通过 `--sandbox-network` 单独配置。页面依赖的 CDN 等跨域资源也需要列出对应的 HTTPS 来源。
+只使用搜索和抓取时，直接用 `--request` 运行即可。配置了公网浏览器来源时，启动 `serve --sandbox docker` 或 `serve --sandbox e2b`，并构建含新版 worker 的镜像。任务 Shell 的出网通过 `--sandbox-network` 单独配置。页面依赖的 CDN 等跨域资源也需要列出对应的 HTTPS 来源。
 
 ## 按需读取 Skill
 
-使用 Docker 或 E2B 沙箱时，可以用 `--skills-dir` 配置本机的 Skill 目录，可重复指定。目录包含一组 Skill 子目录，每项以带 YAML frontmatter 的 `SKILL.md` 为入口，`name` 与目录名一致。
+启用工作区时，可以用 `--skills-dir` 配置本机的 Skill 目录，可重复指定。目录包含一组 Skill 子目录，每项以带 YAML frontmatter 的 `SKILL.md` 为入口，`name` 与目录名一致。
 
 用 `--skill` 指定本次任务需要的 Skill。使用 JSON 任务请求时，通过 `skills` 数组指定名单。[Plugin 和任务扩展](plugins.md)
 
 ```bash
-uv run --project agent agent-cook --sandbox docker --skills-dir /path/to/skills \
+uv run --project agent agent-cook --skills-dir /path/to/skills \
   '找到适合这个任务的 Skill，并说明它的步骤。'
 ```
 
-初始模型上下文只包含每项 Skill 的 `name`、`description` 和 `entry`。工作区首次打开时，将已配置 Skill 的包文件按原目录结构复制到工作区。比如 `example/SKILL.md` 对应沙箱内的 `/workspace/example/SKILL.md`。
+初始模型上下文只包含每项 Skill 的 `name`、`description` 和 `entry`。工作区首次打开时，将已配置 Skill 的包文件按原目录结构复制到工作区。例如 `example/SKILL.md` 对应任务工作区中的实际文件。
 
 模型可以用 `read_file` 读取 `example/SKILL.md`，用 `ls` 查看 `example/references`，也可以在 `run_command` 里用解释器运行 `example/scripts` 里的脚本。Skill 包仅传输普通文件，与用户输入共用传输上限。同名的工作区输入会报错，运行期间的修改保存在当前任务的副本里。
 
@@ -94,38 +96,33 @@ uv run --project agent agent-cook --sandbox docker --skills-dir /path/to/skills 
 比例和分辨率沿用所选模型的默认值，除非调用时显式指定。工具用实际图片格式确定扩展名，支持 PNG、JPEG 和 WebP，单张图片最多 16 MiB。可以用返回的 `path` 将图片放进网页，也可以用 `submit_results` 导出。
 
 ```bash
-uv run --project agent agent-cook --sandbox docker --timeout 240 \
+uv run --project agent agent-cook --timeout 240 \
   --model 'provider/chat-model' \
   --image-model bytedance-seed/seedream-4.5 \
   '生成一张 16:9 的深蓝色城市夜景，用 submit_results 交付图片。'
 ```
 
-## 沙箱内置依赖
+## 本地执行与文件边界
 
-| 用途 | 预装内容 |
+本地 CLI 默认启用原生工作区。用户选择的文件和挂载的 Skill 复制到每次任务的临时目录，Python、Node.js 和 Chromium 子进程只能写入本次目录及隔离的临时空间。子进程使用独立环境，不继承模型或检索凭据。CLI 主进程负责模型、检索和最终交付。
+
+| 系统 | 进程隔离 |
 |---|---|
-| 执行与浏览器 | Python 3.12、Node.js 22、npm、npx、Playwright Chromium |
-| Excel | openpyxl、XlsxWriter、pandas |
-| PPTX、Word 和 PDF | python-pptx、python-docx、pypdf |
-| 图片和绘图 | Pillow、Matplotlib |
-| 数组、统计和线性代数 | NumPy、SciPy |
+| macOS | 系统 Seatbelt 进程策略。 |
+| Linux | Bubblewrap 命名空间和只读挂载。 |
+| Windows | AppContainer 文件权限、无网络能力和 Job Object 进程管理。 |
 
-Python 版本清单在 [sandbox/requirements.txt](../sandbox/requirements.txt)。本地 Docker 镜像和基于它构建的 E2B 模板提供同一套依赖。
-
-## 本地 Docker
-
-源码启动时，第一次 Docker 任务会构建本地工作区镜像。可提前用 `./cook docker` 或 `cook.cmd docker` 准备，也可单独构建镜像，再把镜像名交给 `--docker-image`。
+运行环境提供 Python 3.12、openpyxl、python-pptx、Pillow、Node.js 22 和 Playwright Chromium。Node.js 和 Chromium 在首次使用时准备。任务脚本默认离线，浏览器预览使用本地 HTML 和资源文件。执行前可用 `agent-cook doctor` 检查进程隔离。
 
 ```bash
-docker build -f sandbox/Dockerfile -t agent-cook-sandbox:local .
-
-export OPENROUTER_API_KEY='your-key'
-uv run --project agent agent-cook exec --sandbox docker --max-turns 16 --timeout 180 \
-  --model 'provider/chat-model' \
-  '在工作区写一个计数器网页，用 playwright 点击按钮并截屏。用 submit_results 交付网页和截图。'
+./cook run '写一个计数器网页，用 playwright 点击按钮并截屏。用 submit_results 交付网页和截图。'
 ```
 
-`--input` 可以重复使用，每个指定的本地文件以原文件名复制到这次工作区。Docker 每个 Run 启动一个容器，在里面使用独立的工作区。`--sandbox-network` 可以按需开启出网安装依赖。
+## 服务端 Docker
+
+可用 `./cook docker` 准备任务镜像，再用 `./cook serve --sandbox docker` 启动 HTTP 服务。自建镜像通过服务端的 `--docker-image` 配置。每个 Run 使用独立容器。`--sandbox-network` 可为服务端任务单独开启出网。
+
+服务端镜像和同源 E2B 模板带有 Node.js、npm、Chromium，以及 Excel、Office、PDF、绘图和数值计算依赖。[镜像依赖清单](../sandbox/requirements.txt) · [运行 HTTP 服务](server.md)
 
 ## 远程 E2B
 
@@ -142,8 +139,7 @@ Template.build(Template().from_image(os.environ["AGENT_COOK_IMAGE"]), alias="age
 PY
 
 export E2B_TEMPLATE='agent-cook'
-uv run --project agent --extra e2b agent-cook --sandbox e2b \
-  '写一份简短的结果文件并用 submit_results 交付。'
+uv run --project agent --extra e2b --extra server agent-cook serve --sandbox e2b
 ```
 
 远程后端同样在首次工具调用时创建，Run 退出时关闭。E2B 公网入口采用访问令牌保护，两种后端默认关闭任务出网。模型和 E2B 的 API Key 由宿主进程使用。[E2B 模板构建说明](https://e2b.dev/resources/introducing-build-system-2-0)

@@ -48,7 +48,7 @@ def demo() -> int:
     parser.add_argument("name", choices=("quickstart", "shop-review", "event-registration", "combined-review"))
     name = parser.parse_args().name
     args = [
-        "exec", "--sandbox", "docker", "--request", str(EXAMPLES / name / "run.json"),
+        "exec", "--request", str(EXAMPLES / name / "run.json"),
         "--max-turns", "24", "--timeout", "300",
     ]
     if name in ("event-registration", "combined-review"):

@@ -75,13 +75,12 @@ class SkillTest(unittest.TestCase):
                 "OPENROUTER_IMAGE_MODEL": "",
             }),
             patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}),
-            patch("agent_cook.cli.DockerSandboxFactory", return_value=worker),
-            patch("agent_cook.cli.prepare_docker"),
+            patch("agent_cook.cli.NativeSandboxFactory", return_value=worker),
             redirect_stdout(io.StringIO()),
             redirect_stderr(io.StringIO()) as stderr,
         ):
             status = main([
-                "--sandbox", "docker", "--trace", str(self.root / "trace.jsonl"),
+                "--sandbox", "native", "--trace", str(self.root / "trace.jsonl"),
                 "--skills-dir", str(self.skills), "Read the example skill",
             ])
 

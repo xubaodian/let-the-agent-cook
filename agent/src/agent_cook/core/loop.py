@@ -33,6 +33,7 @@ async def run_loop(
     seen_calls: set[str] = set()
     artifacts: dict[str, ArtifactRef] = {}
     submitted: dict[str, SubmittedFile] = {}
+    delivery_artifacts: set[str] = set()
     needs_submission = require_submission
 
     for turn_number in range(1, spec.max_model_turns + 1):
@@ -66,7 +67,7 @@ async def run_loop(
             feedback = None
             if needs_submission:
                 feedback = "Call submit_results to submit the final files before answering."
-            elif require_submission:
+            elif submitted:
                 stale = await stale_submissions(await tool_context.get_sandbox(), submitted.values())
                 if stale:
                     for path in stale:
@@ -82,9 +83,9 @@ async def run_loop(
                 session.messages.append(Message("user", f"Runtime completion check. {feedback}"))
                 events.emit("run.submission_required", turn=turn_number)
                 continue
-            final_artifacts = (
-                tuple(file.artifact for file in submitted.values()) if require_submission else tuple(artifacts.values())
-            )
+            final_artifacts = tuple(file.artifact for file in submitted.values())
+            if not require_submission:
+                final_artifacts += tuple(artifact for key, artifact in artifacts.items() if key not in delivery_artifacts)
             return RunResult(tool_context.run_id, text, final_artifacts)
 
         if not definitions:
@@ -106,9 +107,10 @@ async def run_loop(
             if result.is_error:
                 session.failed_tool_calls.add(call.id)
             events.emit("tool.finished", tool_call_id=call.id, name=call.name, is_error=result.is_error)
-            if require_submission and call.name == SUBMIT_RESULTS and not result.is_error and result.submitted_files:
+            if call.name == SUBMIT_RESULTS and not result.is_error and result.submitted_files:
                 needs_submission = False
                 submitted.update((file.workspace_path, file) for file in result.submitted_files)
+                delivery_artifacts.update(file.artifact.id for file in result.submitted_files)
             for artifact in result.artifacts:
                 previous = artifacts.get(artifact.id)
                 if previous is not None and previous != artifact:

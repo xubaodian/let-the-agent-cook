@@ -49,7 +49,7 @@ install_environment() {
         uv=$(find_uv) || { echo "Could not find uv after installation." >&2; exit 1; }
     fi
     echo "Installing Agent Cook with Python $(< "$project/.python-version") …" >&2
-    "$uv" sync --project "$project" --locked --python "$(< "$project/.python-version")" --extra server --extra e2b
+    "$uv" sync --project "$project" --locked --python "$(< "$project/.python-version")" --extra examples --extra server --extra e2b
 }
 
 launch() {

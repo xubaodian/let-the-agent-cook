@@ -127,12 +127,11 @@ class PluginTest(unittest.TestCase):
                 "OPENROUTER_API_KEY": "test-key", "OPENROUTER_MODEL": "fixture/model", "OPENROUTER_IMAGE_MODEL": "",
             }),
             patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}),
-            patch("agent_cook.cli.DockerSandboxFactory", return_value=worker),
-            patch("agent_cook.cli.prepare_docker"),
+            patch("agent_cook.cli.NativeSandboxFactory", return_value=worker),
             redirect_stdout(io.StringIO()),
             redirect_stderr(io.StringIO()) as stderr,
         ):
-            status = main(["--sandbox", "docker", "--request", str(request_path), "--trace", str(trace_path)])
+            status = main(["--sandbox", "native", "--request", str(request_path), "--trace", str(trace_path)])
 
         self.assertEqual(status, 0, stderr.getvalue())
         self.assertEqual(observed["review"], "Reviewed the brief instructions.")

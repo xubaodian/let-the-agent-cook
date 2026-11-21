@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 from urllib.parse import urlsplit
 
-from agent_cook.cli import main
+from agent_cook.cli import _configure, _execute, _parser, _prepare, main
 from agent_cook.model.openrouter import OpenRouterModel
 from agent_cook.protocol.request import RunRequest
 from agent_cook.sandbox.docker import DEFAULT_DOCKER_IMAGE
@@ -177,7 +177,7 @@ class ExaWebTest(unittest.TestCase):
         ):
             root = Path(directory)
             (root / "agent-cook.json").write_text(json.dumps({"api_keys": {"exa": "fixture-exa-key"}}), encoding="utf-8")
-            self.assertEqual(main(["exec", "-C", directory, "--config", "agent-cook.json", "Look up pricing."]), 0)
+            self.assertEqual(main(["exec", "--sandbox", "none", "-C", directory, "--config", "agent-cook.json", "Look up pricing."]), 0)
 
         first, second, third = (attempt.kwargs for attempt in create.await_args_list)
         self.assertEqual([item["function"]["name"] for item in first["tools"]], ["web_search", "web_fetch"])
@@ -218,7 +218,7 @@ class ExaWebTest(unittest.TestCase):
                     redirect_stdout(io.StringIO()),
                     redirect_stderr(io.StringIO()),
                 ):
-                    self.assertEqual(main(["exec", "-C", directory, "--request", "request.json"]), 0)
+                    self.assertEqual(main(["exec", "--sandbox", "none", "-C", directory, "--request", "request.json"]), 0)
                 mcp.assert_not_awaited()
                 request_sent = create.await_args.kwargs
                 tools = request_sent.get("tools", request_sent.get("extra_body", {}).get("tools", []))
@@ -346,13 +346,15 @@ class WebCliTest(unittest.TestCase):
                 }),
                 patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}),
                 patch("agent_cook.cli.DockerSandboxFactory", side_effect=[local, browser]) as factory,
-                patch("agent_cook.cli.prepare_docker"),
                 redirect_stdout(io.StringIO()),
                 redirect_stderr(io.StringIO()) as stderr,
             ):
-                status = main(["--sandbox", "docker", "--request", str(request), "--trace", str(trace),
-                               "--input", str(old_proof)])
-            self.assertEqual(status, 0, stderr.getvalue())
+                args = _parser("serve").parse_args(["--sandbox", "docker", "--trace", str(trace)])
+                catalog = _configure(args, root, "serve")
+                job = RunRequest.from_file(request)
+                prepared = _prepare(args, job, catalog)
+                result, _, _ = _execute(args, root, prepared, job.task, "fixture-key", {"proof.png": old_proof.read_bytes()})
+            self.assertEqual(result.text, "Verified the pricing page.", stderr.getvalue())
             self.assertEqual(factory.call_args_list, [
                 call(DEFAULT_DOCKER_IMAGE, allow_network=False), call(DEFAULT_DOCKER_IMAGE, allow_network=True),
             ])

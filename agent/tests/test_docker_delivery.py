@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
 
 from agent_cook.cli import main
+from agent_cook.sandbox.docker import DockerSandboxFactory
 from agent_cook.settings import DATA
 from test_cli_entry import ENV, sdk, tool
 from test_openrouter import response
@@ -32,12 +33,15 @@ class DockerDeliveryTest(unittest.TestCase):
 
     def run_task(self, *turns, interactive=False):
         create = AsyncMock(side_effect=turns)
-        with patch.dict(sys.modules, {"openai": sdk(create)}):
+        with (
+            patch.dict(sys.modules, {"openai": sdk(create)}),
+            patch("agent_cook.cli.NativeSandboxFactory", return_value=DockerSandboxFactory(IMAGE)),
+        ):
             if interactive:
                 with patch("sys.stdin", io.StringIO(f'Update @"{FIXTURE}".\n/open\n/exit\n')):
-                    return main(["-C", str(self.directory), "--docker-image", IMAGE])
+                    return main(["-C", str(self.directory)])
             return main([
-                "exec", "-C", str(self.directory), "--docker-image", IMAGE,
+                "exec", "-C", str(self.directory),
                 "--input", FIXTURE, "Update the copied table and deliver it with a summary.",
             ])
 

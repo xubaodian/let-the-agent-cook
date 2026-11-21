@@ -18,12 +18,12 @@
 
 1. 打开 Agent Cook。按 Enter 在浏览器授权 OpenRouter，或输入 `key` 无回显粘贴已有 Key。可录入 Exa Key 或按 Enter 跳过，然后选择对话模型或输入模型 ID。
 2. 输入 `/example` 生成样例目录。把终端给出的任务粘贴回 CLI。处理自己的文件时，可用 `@路径` 或 `@"带空格的目录"` 选择文件夹。多个输入可以一起选择。
-3. 第一次文件任务会检查本机 Docker，包括使用 Docker 上下文的 Colima。按 Enter 启动已安装的引擎或打开官方安装说明，也可随时输入 `/docker`。处理完系统授权或重启提示后可重试同一任务。引擎就绪后，安装包会拉取配套镜像，源码会从现有 Dockerfile 构建本地镜像，已有镜像直接复用。[Windows](https://docs.docker.com/desktop/setup/install/windows-install/) · [macOS](https://docs.docker.com/desktop/setup/install/mac-install/) · [Linux](https://docs.docker.com/engine/install/)
+3. 本地脚本通过系统沙箱执行。Linux 源码用户需安装 Bubblewrap，例如在 Ubuntu 运行 `sudo apt install bubblewrap`。首次运行 Node.js 或预览网页时会下载并缓存运行时，原生安装包也会按需准备文件处理所用的 Python 环境。
 4. 成功后，终端会显示结果目录的绝对路径。输入 `/open` 可在文件管理器打开。安装包的应用入口将任务记录和结果保存在用户主目录的 `Agent Cook/.agent-cook/runs/`。
 
 附加目录时保留目录名和文件层级，原件保留在宿主机。每个文件最多 16 MiB，一批输入最多 32 MiB。导入跳过目录内的符号链接与 Windows 联接。路径冲突会提示具体文件或文件夹。成功后 `<run_id>-results/` 包含通过最终校验的产物。提交批次与记录在同一层，供回放与续接使用。
 
-终端里也可用 `agent-cook exec --input "资料 样例" "根据销售表生成简报"`。带输入时默认使用本机 Docker。用 `--sandbox docker` 发起无附件的生成任务。交互模式可以直接对话，按 `Ctrl+C` 可取消当前任务。
+终端里也可用 `agent-cook exec --input "资料 样例" "根据销售表生成简报"`。CLI 默认用原生沙箱处理文件，支持无附件的生成任务。输入 `agent-cook doctor` 检查本机隔离是否可用。交互模式可以直接对话，按 `Ctrl+C` 可取消当前任务。
 
 ## 配置
 
@@ -48,7 +48,7 @@
 
 PR 的 [Actions](https://github.com/xubaodian/let-the-agent-cook/actions) 构建三端安装包，在对应的托管 runner 安装并运行入口。部署方可用仓库变量 `AGENT_COOK_MODELS_JSON` 以 [models.example.json](../models.example.json) 的格式向安装包提供公开候选模型。也可在本地打包时传 `--models models.json`。
 
-维护者发布时使用与 `agent/pyproject.toml` 匹配的版本标签，例如 `v0.1.0`。发布流水线安装锁定的依赖，签署 Windows MSI，签署并公证 macOS PKG，并构建 Linux amd64 和 arm64 的配套镜像。首次发布需要把 GHCR 中的 `agent-cook-sandbox` 包设为公开，使安装后的第一次文件任务可直接拉取。流水线验证两个架构都可匿名读取后上传安装包。下载页源码位于 [docs/download/index.html](download/index.html)，可以随仓库的 `docs/` 部署。 [Windows 安装范围](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) · [Apple 公证](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) · [多架构镜像](https://docs.docker.com/build/building/multi-platform/)
+维护者发布时使用与 `agent/pyproject.toml` 匹配的版本标签，例如 `v0.1.0`。发布流水线安装锁定的依赖，签署 Windows MSI，签署并公证 macOS PKG，并构建供 HTTP 服务调用的 Linux amd64 和 arm64 工作区镜像。首次发布需要把 GHCR 中的 `agent-cook-sandbox` 包设为公开，供服务端拉取。流水线验证两个架构都可匿名读取后上传安装包。下载页源码位于 [docs/download/index.html](download/index.html)，可以随仓库的 `docs/` 部署。 [Windows 安装范围](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) · [Apple 公证](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) · [多架构镜像](https://docs.docker.com/build/building/multi-platform/)
 
 Windows 签名使用 `WINDOWS_PFX_BASE64` 和 `WINDOWS_PFX_PASSWORD`。macOS 使用 `MACOS_APP_IDENTITY`、`MACOS_INSTALLER_IDENTITY` 及两个身份对应的 `MACOS_APP_P12_BASE64`、`MACOS_INSTALLER_P12_BASE64` 和各自的 `*_P12_PASSWORD`。公证使用 `MACOS_NOTARY_KEY_BASE64`、`MACOS_NOTARY_KEY_ID` 和 `MACOS_NOTARY_ISSUER`。
 
@@ -57,20 +57,20 @@ Windows 签名使用 `WINDOWS_PFX_BASE64` 和 `WINDOWS_PFX_PASSWORD`。macOS 使
 在干净的 Windows 11 x64、Apple Silicon Mac 和 Ubuntu 24.04 x64 上用对应安装包验证。
 
 1. 从安装脚本、开始菜单、应用程序或应用菜单启动。验证预填两把 Key 后可直接进入 CLI，也可在向导跳过 Exa。用 `/key exa` 更新 Exa，重启或重复安装后确认模型和 OpenRouter Key 仍能加载。
-2. 在 Docker 未就绪时运行 `/example` 给出的任务，核对提示和重试。Docker 就绪后观察首次下载或构建，再执行一次相同任务以检查镜像复用。
+2. 运行 `agent-cook doctor`，确认原生隔离正常。执行 `/example` 给出的任务，核对首次准备的运行时能在第二次任务复用。
 3. 用 `/open` 打开交付目录，对照包含中文、空格和子目录的样例，核对层级、处理后的副本和原始文件。以下脚本也可从已安装的 CLI 走完整路径，会调用已配置的 OpenRouter 模型。
 
 | 系统 | 命令 |
 | --- | --- |
-| Windows PowerShell | `python installers/smoke.py "$env:LOCALAPPDATA/Programs/Agent Cook/agent-cook.exe" --docker` |
-| macOS | `python3 installers/smoke.py "/Applications/Agent Cook.app/Contents/Resources/agent-cook/agent-cook" --docker` |
-| Ubuntu | `python3 installers/smoke.py /usr/bin/agent-cook --docker` |
+| Windows PowerShell | `python installers/smoke.py "$env:LOCALAPPDATA/Programs/Agent Cook/agent-cook.exe" --files` |
+| macOS | `python3 installers/smoke.py "/Applications/Agent Cook.app/Contents/Resources/agent-cook/agent-cook" --files` |
+| Ubuntu | `python3 installers/smoke.py /usr/bin/agent-cook --files` |
 
-4. 从仓库运行以下回归和真实 Docker 测试。Docker 测试会检查首次准备镜像、`/open` 的目标、任务失败或取消后的记录，以及同一路径重复提交时交付的最终版本。首次发布前可传 `--docker-image agent-cook-sandbox:local` 让安装验收使用本地镜像。
+4. 从仓库运行下列回归。三端矩阵在真实系统隔离中执行 Node.js、Python 和 Chromium，校验宿主读写、网络和密钥限制，以及文件层级、覆盖提交、取消和结果目录。
 
 ```bash
 uv run --project agent --locked --all-extras python -m unittest discover -s agent/tests -v
-AGENT_COOK_TEST_DOCKER_IMAGE=agent-cook-sandbox:local uv run --project agent --locked python -m unittest discover -s agent/tests -p test_docker_delivery.py -v
+AGENT_COOK_TEST_NATIVE=1 uv run --project agent --locked --all-extras python -m unittest discover -s agent/tests -p test_native_sandbox.py -v
 ```
 
-PowerShell 中先设置 `$env:AGENT_COOK_TEST_DOCKER_IMAGE = 'agent-cook-sandbox:local'`，再运行上面最后一行的 `uv run` 命令。
+PowerShell 中先设置 `$env:AGENT_COOK_TEST_NATIVE = '1'`，再运行相同的 `uv run` 命令。

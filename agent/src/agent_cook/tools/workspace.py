@@ -170,7 +170,7 @@ async def _preview(
 
 
 def workspace_tools(
-    exporter: ArtifactExporter, *, public_browser: PublicBrowser | None = None,
+    exporter: ArtifactExporter, *, public_browser: PublicBrowser | None = None, native_preview: bool = False,
 ) -> tuple[ToolRegistry, tuple[str, ...]]:
     registry = ToolRegistry()
     registry.register(_LS, _operation("list_files"))
@@ -178,7 +178,14 @@ def workspace_tools(
         registry.register(definition, _operation(definition.name))
     registry.register(_COMMAND, _run_command)
     browser = _BROWSER
-    if public_browser is not None:
+    if native_preview:
+        browser = _definition(
+            "playwright", "Preview a local HTML file in offline Chromium. Use workspace-relative paths. "
+            "Screenshots are workspace PNG files.",
+            {key: _BROWSER.input_schema["properties"][key] for key in ("path", "actions", "screenshot")},
+            ("path",),
+        )
+    elif public_browser is not None:
         browser = replace(_BROWSER, description=(
             _BROWSER.description + " For public page reads, use url and optional actions or screenshot. "
             "Approved HTTPS origins for this task: " + ", ".join(public_browser.origins)

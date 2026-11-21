@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   installer:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -39,12 +40,20 @@ jobs:
           ./install --list-models
           ./cook --list-models
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Install Ubuntu native isolation
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
       - name: Install locked packaging dependencies
-        run: uv sync --project agent --locked --extra release --extra mcp --extra server --extra e2b
+        run: uv sync --project agent --locked --all-extras
       - name: Validate native host paths and onboarding
         run: |
           uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_local_files.py -v
           uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_onboarding.py -v
+      - name: Verify native isolation and CLI folder delivery
+        env:
+          AGENT_COOK_TEST_NATIVE: '1'
+          PYTHONUTF8: '1'
+        run: uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_native_sandbox.py -v
       - name: Install WiX
         if: runner.os == 'Windows'
         shell: pwsh

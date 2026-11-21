@@ -96,12 +96,11 @@ class ImageCliTest(unittest.TestCase):
             with (
                 patch.dict(os.environ, environment),
                 patch.dict(sys.modules, {"openai": sdk_module(client)}),
-                patch("agent_cook.cli.DockerSandboxFactory", return_value=factory),
-                patch("agent_cook.cli.prepare_docker"),
+                patch("agent_cook.cli.NativeSandboxFactory", return_value=factory),
                 redirect_stdout(io.StringIO()),
                 redirect_stderr(io.StringIO()) as stderr,
             ):
-                status = main(["--sandbox", "docker", "--trace", str(trace), "--request", str(request)])
+                status = main(["--sandbox", "native", "--trace", str(trace), "--request", str(request)])
 
             self.assertEqual(status, 0, stderr.getvalue())
             raw_trace = trace.read_text(encoding="utf-8")

@@ -251,12 +251,11 @@ class ExamplePluginsTest(unittest.TestCase):
                 source.write_text(json.dumps(document), encoding="utf-8")
             resources.enter_context(patch.dict(os.environ, environment))
             resources.enter_context(patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}))
-            resources.enter_context(patch("agent_cook.cli.DockerSandboxFactory", return_value=worker))
-            resources.enter_context(patch("agent_cook.cli.prepare_docker"))
+            resources.enter_context(patch("agent_cook.cli.NativeSandboxFactory", return_value=worker))
             resources.enter_context(redirect_stdout(io.StringIO()))
             stderr = resources.enter_context(stderr_path.open("w", encoding="utf-8"))
             resources.enter_context(redirect_stderr(stderr))
-            status = main(["--sandbox", "docker", "--trace", str(trace), "--request", str(source), "--max-turns", "24"])
+            status = main(["--sandbox", "native", "--trace", str(trace), "--request", str(source), "--max-turns", "24"])
         if errors:
             raise errors[0]
         self.assertEqual(status, 0, stderr_path.read_text(encoding="utf-8"))

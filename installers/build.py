@@ -46,6 +46,15 @@ def secret_file(directory: Path, name: str, variable: str) -> Path:
 def freeze(work: Path, image: str, models: Path | None, identity: str | None) -> Path:
     data = shutil.copytree(SOURCE / "data", work / "data")
     (data / "release.json").write_text(json.dumps({"sandbox_image": image}), encoding="utf-8")
+    uv = shutil.which("uv")
+    if uv is None:
+        raise SystemExit("Run the installer build with uv on PATH.")
+    native = data / "native"
+    shutil.copy2(uv, native / ("uv.exe" if os.name == "nt" else "uv"))
+    project = native / "project"
+    project.mkdir()
+    for name in (".python-version", "pyproject.toml", "uv.lock"):
+        shutil.copyfile(ROOT / "agent" / name, project / name)
     if models is not None:
         from agent_cook.model.catalog import ModelCatalog
 
@@ -211,7 +220,7 @@ def linux(payload: Path, output: Path, work: Path) -> None:
     (base / "DEBIAN/control").write_text(
         f"Package: agent-cook\nVersion: {VERSION}\nArchitecture: amd64\n"
         "Maintainer: Let the Agent Cook <22562011+xubaodian@users.noreply.github.com>\n"
-        "Depends: libc6 (>= 2.39)\nRecommends: gnome-keyring, xdg-utils\n"
+        "Depends: libc6 (>= 2.39), bubblewrap\nRecommends: gnome-keyring, xdg-utils\n"
         "Description: Agent Cook command line application\n", encoding="utf-8",
     )
     call("dpkg-deb", "--root-owner-group", "--build", base, output / "AgentCook-ubuntu-amd64.deb")

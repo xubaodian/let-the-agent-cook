@@ -43,7 +43,7 @@ function Install-Environment {
     }
     $pythonVersion = (Get-Content -LiteralPath (Join-Path $project ".python-version") -Raw).Trim()
     Write-Host "Installing Agent Cook with Python $pythonVersion ..."
-    & $uv sync --project $project --locked --python $pythonVersion --extra server --extra e2b
+    & $uv sync --project $project --locked --python $pythonVersion --extra examples --extra server --extra e2b
     if ($LASTEXITCODE -ne 0) { throw "Could not install the locked Agent Cook dependencies." }
 }
 

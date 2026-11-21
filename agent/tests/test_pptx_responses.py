@@ -11,6 +11,7 @@ from textwrap import dedent
 from unittest.mock import patch
 
 from examples.pptx_validation import CASES, SEEDREAM, run_case
+from agent_cook.sandbox.docker import DockerSandboxFactory
 from test_openrouter_responses import function_item, reply, text_item
 
 IMAGE = os.environ.get("AGENT_COOK_TEST_DOCKER_IMAGE")
@@ -97,10 +98,11 @@ class PowerPointResponsesTest(unittest.TestCase):
                     with (
                         patch("openai.AsyncOpenAI", side_effect=client),
                         patch.dict(os.environ, {"OPENROUTER_API_KEY": "fixture-key"}),
+                        patch("agent_cook.cli.NativeSandboxFactory", return_value=DockerSandboxFactory(IMAGE)),
                         redirect_stdout(io.StringIO()), redirect_stderr(diagnostics),
                     ):
                         try:
-                            delivered = run_case(case, root, model=case.model, image_model=SEEDREAM, docker_image=IMAGE)
+                            delivered = run_case(case, root, model=case.model, image_model=SEEDREAM)
                         except ValueError as error:
                             self.fail(f"{error}\n{diagnostics.getvalue()}")
                     self.assertEqual(paths.count("/api/v1/responses"), 5)

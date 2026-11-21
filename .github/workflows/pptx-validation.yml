@@ -33,9 +33,9 @@ jobs:
         if: steps.credential.outputs.ready == 'true'
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         if: steps.credential.outputs.ready == 'true'
-      - name: Build the sandbox
+      - name: Install Bubblewrap
         if: steps.credential.outputs.ready == 'true'
-        run: docker build -f sandbox/Dockerfile -t agent-cook-sandbox:local .
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
       - name: Generate and verify three PowerPoint decks
         if: steps.credential.outputs.ready == 'true'
         env:
