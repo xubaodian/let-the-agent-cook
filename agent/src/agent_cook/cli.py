@@ -21,18 +21,18 @@ from agent_cook.delivery import publish_results, result_snapshots
 from agent_cook.events.journal import RunEvents, write_jsonl
 from agent_cook.local_files import PortablePaths, collect_inputs, portable_path
 from agent_cook.model.catalog import MODEL_APIS, ModelCatalog
-from agent_cook.onboarding import connect
+from agent_cook.onboarding import connect, read_key
 from agent_cook.protocol.events import RunEvent
 from agent_cook.protocol.request import RunRequest
 from agent_cook.runner import run_task
 from agent_cook.sandbox.docker import DEFAULT_DOCKER_IMAGE, DockerSandboxFactory
-from agent_cook.sandbox.docker_setup import DockerSetupError, check_linux_docker, image_available, prepare_docker
+from agent_cook.sandbox.docker_setup import (
+    DockerSetupError, check_linux_docker, image_available, prepare_docker, source_workspace,
+)
 from agent_cook.sandbox.e2b import E2BSandboxFactory
 from agent_cook.sandbox.interface import SandboxError, SandboxFactory
 from agent_cook.sandbox.limits import MAX_TRANSFER_BYTES
-from agent_cook.settings import (
-    DATA, AgentConfig, CredentialStoreError, model_catalog, release_image, saved_model, stored_key,
-)
+from agent_cook.settings import DATA, AgentConfig, model_catalog, release_image, saved_model
 from agent_cook.state.local import LocalSession, LocalSessions
 from agent_cook.terminal import file_mentions, prompt_reader, show_progress
 
@@ -98,7 +98,7 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
     if not chat_model:
         raise ValueError(
             "Choose a chat model via --model, the task's model, OPENROUTER_MODEL, "
-            "or models.chat.default in agent-cook.json. Open agent-cook in a terminal for guided setup."
+            f"or models.chat.default in '{args.config.path}'. Open agent-cook in a terminal for guided setup."
         )
     model_api = _select_model(args.model_api, request.model_api, "OPENROUTER_MODEL_API", args.config.model_api)
     if model_api is not None and model_api not in MODEL_APIS:
@@ -121,7 +121,7 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
     elif args.sandbox == "e2b":
         key = args.config.api_key("e2b")
         if not key:
-            raise ValueError("Set api_keys.e2b in agent-cook.json or E2B_API_KEY before using the remote sandbox.")
+            raise ValueError(f"Set api_keys.e2b in '{args.config.path}' or E2B_API_KEY to use the remote sandbox.")
         make_sandbox = partial(
             E2BSandboxFactory,
             args.config.e2b_template,
@@ -161,7 +161,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     name = "agent-cook" if mode == "local" else f"agent-cook {mode}"
     parser = argparse.ArgumentParser(
         prog=name, description="Run tasks with your OpenRouter model.",
-        epilog="Commands: exec, resume, doctor, serve. Run without a task to start an interactive session.",
+        epilog="Commands: exec, resume, doctor, docker, serve. Run without a task to start an interactive session.",
     )
     parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
     if mode in ("local", "exec"):
@@ -177,7 +177,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
         parser.add_argument("--concurrency", type=int, help="Maximum number of concurrent runs")
     parser.add_argument("-C", "--cd", type=Path, help="Use this directory for task paths and interactive sessions")
     parser.add_argument("--request", type=Path, help="Read the task, model choices and extensions from a JSON request")
-    parser.add_argument("--config", dest="config_path", type=Path, help="Use a local agent-cook.json configuration")
+    parser.add_argument("--config", dest="config_path", type=Path, help="Use a JSON file in place of the user configuration")
     parser.add_argument("--models-config", type=Path, help="Use a custom JSON model catalog")
     parser.add_argument("--list-models", action="store_true", help="Print the configured chat and image models as JSON")
     parser.add_argument("-m", "--model", help="Chat model ID (or set OPENROUTER_MODEL)")
@@ -207,14 +207,9 @@ def _parser(mode: str) -> argparse.ArgumentParser:
 def _api_key(config: AgentConfig, *, required: bool = True) -> str | None:
     if key := config.api_key("openrouter"):
         return key
-    try:
-        if key := stored_key():
-            return key
-    except CredentialStoreError:
-        pass
     if required:
         raise ValueError(
-            "Set api_keys.openrouter in agent-cook.json or OPENROUTER_API_KEY, "
+            f"Set api_keys.openrouter in '{config.path}' or OPENROUTER_API_KEY, "
             "or open agent-cook in a terminal to connect OpenRouter."
         )
     return None
@@ -229,7 +224,7 @@ def _paths(args: argparse.Namespace, directory: Path) -> None:
 
 
 def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCatalog:
-    config = args.config = AgentConfig.load(directory, args.config_path)
+    config = args.config = AgentConfig.load(args.config_path)
     args.sandbox = args.sandbox or os.environ.get("AGENT_COOK_SANDBOX", "").strip() or config.sandbox.get("backend")
     if args.sandbox_network is None:
         args.sandbox_network = config.sandbox.get("network", False)
@@ -272,7 +267,7 @@ def _execute(args, directory, prepared, task, api_key, inputs, *, observer=None,
         raise ValueError("Input files require --sandbox docker or --sandbox e2b.")
     spec, factory, options = prepared
     if args.sandbox == "docker":
-        prepare_docker(args.docker_image, pull=args.docker_image == args.release_image)
+        _prepare_workspace(args)
     run_id = uuid4().hex
     trace = args.trace or directory / ".agent-cook" / "runs" / f"{run_id}.jsonl"
     result = asyncio.run(_run(
@@ -286,6 +281,11 @@ def _execute(args, directory, prepared, task, api_key, inputs, *, observer=None,
     if delivered is not None:
         print(f"Results: {delivered}", file=sys.stderr)
     return result, trace, delivered
+
+
+def _prepare_workspace(args: argparse.Namespace, *, start: bool = False) -> None:
+    source = source_workspace() if args.docker_image == DEFAULT_DOCKER_IMAGE else None
+    prepare_docker(args.docker_image, pull=args.docker_image == args.release_image, source=source, start=start)
 
 
 def _failure(error: Exception) -> None:
@@ -317,6 +317,11 @@ def _example(directory: Path) -> Path:
     return copytree(source, parent / source.name)
 
 
+def _show_key(config: AgentConfig, provider: str) -> None:
+    _, source = config.key_with_source(provider)
+    print(f"{provider} key  {f'configured via {source}' if source else 'not configured'}")
+
+
 def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalog, resume: bool) -> int:
     store = LocalSessions(directory / ".agent-cook" / "sessions.sqlite3")
     saved = store.load(args.session_id) if resume else LocalSession()
@@ -327,21 +332,37 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
     terminal = sys.stdin.isatty() and sys.stdout.isatty()
     read = prompt_reader(directory) if terminal else input
     pending = list(args.input)
-    api_key = _api_key(args.config, required=False)
+    if terminal:
+        args.config = args.config.ensure(catalog)
+        if args.models_config is None and args.config.models is not None:
+            catalog = args.config.models
+
+    def persist(**changes) -> None:
+        nonlocal catalog
+        args.config = args.config.update(catalog=catalog, **changes)
+        if args.models_config is None and args.config.models is not None:
+            catalog = args.config.models
 
     def setup() -> None:
-        nonlocal api_key
         if not terminal:
-            raise ValueError("Open agent-cook in a terminal to connect OpenRouter.")
-        api_key, args.model = connect(read, catalog.chat, api_key=api_key, model=_chat_model(args, catalog))
+            raise ValueError("Open agent-cook in a terminal to run setup.")
+        keys, model = connect(
+            read, catalog.chat, api_key=_api_key(args.config, required=False),
+            exa_key=args.config.api_key("exa"), model=_chat_model(args, catalog),
+        )
+        persist(keys=keys, model=model)
+        args.model = model
+        for provider in keys:
+            _show_key(args.config, provider)
+        print("Settings saved. Type /example for a sample folder task.", file=sys.stderr)
 
     print(f"Session {saved.id} in {directory}. Type /help for commands.", file=sys.stderr)
-    if terminal and (not api_key or not _chat_model(args, catalog)):
+    if terminal and (not _api_key(args.config, required=False) or not _chat_model(args, catalog)):
         try:
             setup()
         except (KeyboardInterrupt, EOFError):
             print("Setup paused. Type /setup to continue.", file=sys.stderr)
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, sqlite3.Error) as error:
             _failure(error)
     while True:
         try:
@@ -366,11 +387,6 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
             elif command == "/files":
                 names = dict.fromkeys((*saved.inputs, *saved.results, *(path.name for path in pending)))
                 print("\n".join(names) or "No files selected.")
-            elif command == "/model":
-                if value:
-                    args.model = value
-                else:
-                    print("\n".join(catalog.chat.available) or "Set a model with /model <id>.")
             elif command == "/sandbox":
                 if value:
                     try:
@@ -383,10 +399,39 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                         _failure(error)
                 else:
                     print(selected or "auto (Docker with selected files)")
-            elif command in ("/setup", "/example", "/open"):
+            elif command in ("/setup", "/key", "/model", "/config", "/docker", "/example", "/open"):
                 try:
                     if command == "/setup":
                         setup()
+                    elif command == "/key":
+                        if not terminal:
+                            raise ValueError("Open agent-cook in a terminal to enter an API key.")
+                        provider = (value or read("Choose openrouter or exa [Enter to cancel]: ")).strip().lower()
+                        if not provider:
+                            continue
+                        if provider not in ("openrouter", "exa"):
+                            raise ValueError("Choose openrouter or exa.")
+                        active = args.config.api_key(provider)
+                        if key := read_key(provider, optional=True, configured=bool(active)):
+                            persist(keys={provider: key})
+                        _show_key(args.config, provider)
+                    elif command == "/model":
+                        if value:
+                            persist(model=value)
+                            args.model = value
+                        else:
+                            print(f"Current model  {_chat_model(args, catalog) or 'not configured'}")
+                            print("\n".join(catalog.chat.available) or "Set a model with /model <id>.")
+                    elif command == "/config":
+                        if not args.config.path.is_file():
+                            persist()
+                        print(f"Configuration  {args.config.path}")
+                        print(f"Current model  {_chat_model(args, catalog) or 'not configured'}")
+                        _show_key(args.config, "openrouter")
+                        _show_key(args.config, "exa")
+                    elif command == "/docker":
+                        _prepare_workspace(args, start=True)
+                        print("The Docker workspace is ready.")
                     elif command == "/example":
                         path = _example(directory)
                         quoted = json.dumps(path.as_posix(), ensure_ascii=False)
@@ -397,12 +442,13 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                         _open_directory(Path(saved.result_dir))
                 except (KeyboardInterrupt, EOFError):
                     print("Command cancelled.", file=sys.stderr)
-                except (OSError, ValueError) as error:
+                except (OSError, ValueError, sqlite3.Error, DockerSetupError) as error:
                     _failure(error)
             elif command == "/help":
                 print(
                     "Use @path or @\"path with spaces\" for a file or folder. "
-                    "Commands: /setup, /example, /open, /files, /model [id], /sandbox [backend], /new, /exit."
+                    "Commands: /setup, /key [openrouter|exa], /model [id], /config, "
+                    "/docker, /example, /open, /files, /sandbox [backend], /new, /exit."
                 )
             else:
                 print(f"Unknown command {command}. Use /help.", file=sys.stderr)
@@ -418,7 +464,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
             if paths and args.sandbox is None:
                 raise ValueError("Selected files and folders require --sandbox docker or --sandbox e2b.")
             request = _request(args, task)
-            if terminal and (not api_key or not _chat_model(args, catalog, request.model)):
+            if terminal and (not _api_key(args.config, required=False) or not _chat_model(args, catalog, request.model)):
                 setup()
             prepared = _prepare(args, request, catalog)
             spec, _, options = prepared
@@ -426,7 +472,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
             while True:
                 try:
                     result, trace, delivered = _execute(
-                        args, directory, prepared, request.task, api_key or _api_key(args.config), staged,
+                        args, directory, prepared, request.task, _api_key(args.config), staged,
                         observer=show_progress, session=history,
                     )
                     break
@@ -434,7 +480,16 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                     if not terminal:
                         raise
                     print(error, file=sys.stderr)
-                    if read("Press Enter to retry this task after preparing Docker, or type cancel: ").strip():
+                    if error.startable:
+                        if read("Prepare Docker [Enter], or type cancel: ").strip():
+                            raise KeyboardInterrupt from None
+                        try:
+                            _prepare_workspace(args, start=True)
+                        except DockerSetupError as setup_error:
+                            print(setup_error, file=sys.stderr)
+                        else:
+                            continue
+                    if read("Press Enter to retry this task after Docker is ready, or type cancel: ").strip():
                         raise KeyboardInterrupt from None
             snapshots = saved.results
             if delivered is not None:
@@ -478,8 +533,10 @@ def _doctor(args: argparse.Namespace, catalog: ModelCatalog) -> int:
         if checks.get("Sandbox image") is False:
             if args.docker_image == args.release_image:
                 print("The first Docker task will download the workspace image.", file=sys.stderr)
+            elif args.docker_image == DEFAULT_DOCKER_IMAGE and source_workspace() is not None:
+                print("The first Docker task will build the workspace image.", file=sys.stderr)
             else:
-                print("Run ./cook setup --docker to build the development image.", file=sys.stderr)
+                print("Install the selected workspace image or choose another with --docker-image.", file=sys.stderr)
     if args.sandbox == "e2b":
         checks["E2B SDK"] = bool(find_spec("e2b"))
         checks["E2B credentials and template"] = bool(args.config.api_key("e2b") and args.config.e2b_template)
@@ -491,7 +548,7 @@ def _doctor(args: argparse.Namespace, catalog: ModelCatalog) -> int:
 def _serve(args, catalog: ModelCatalog) -> int:
     token = os.environ.get("AGENT_COOK_SERVER_TOKEN", "").strip() or (args.config.server.get("token") or "").strip()
     if not token:
-        raise ValueError("Set server.token in agent-cook.json or AGENT_COOK_SERVER_TOKEN for the HTTP service.")
+        raise ValueError(f"Set server.token in '{args.config.path}' or AGENT_COOK_SERVER_TOKEN for the HTTP service.")
     api_key = _api_key(args.config)
     spec, factory, options = _prepare(args, _request(args, "Service defaults"), catalog)
     try:
@@ -525,7 +582,7 @@ def main(argv: list[str] | None = None) -> int:
             if not stream.isatty() and (configure := getattr(stream, "reconfigure", None)):
                 configure(encoding="utf-8")
     words = list(sys.argv[1:] if argv is None else argv)
-    mode = words.pop(0) if words and words[0] in ("exec", "resume", "doctor", "serve") else "local"
+    mode = words.pop(0) if words and words[0] in ("exec", "resume", "doctor", "docker", "serve") else "local"
     parser = _parser(mode)
     args = parser.parse_args(words)
     try:
@@ -559,6 +616,16 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("Specify the task and extension selections in the JSON file when using --request.")
         if mode == "doctor":
             return _doctor(args, catalog)
+        if mode == "docker":
+            try:
+                _prepare_workspace(args, start=True)
+            except DockerSetupError as error:
+                _failure(error)
+                return 1
+            except KeyboardInterrupt:
+                return 130
+            print("The Docker workspace is ready.")
+            return 0
         if mode == "serve":
             if args.input or args.trace:
                 raise ValueError("The server accepts files and records traces per submitted run.")

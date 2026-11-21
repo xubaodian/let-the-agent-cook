@@ -2,43 +2,151 @@ import base64
 import hashlib
 import io
 import json
+import os
+import stat
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from subprocess import check_output
 from tempfile import TemporaryDirectory
 from threading import Thread
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import urlopen
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, patch
 
-from agent_cook.model.catalog import ModelChoices
-from agent_cook.onboarding import available_models, connect, connect_browser
-from agent_cook.settings import ACCOUNT, SERVICE, saved_model, stored_key
+from agent_cook.cli import main
+from agent_cook.core.types import RunResult
+from agent_cook.onboarding import available_models, connect_browser
+from agent_cook.settings import ACCOUNT, SERVICE
+
+
+class Terminal(io.StringIO):
+    def isatty(self):
+        return True
 
 
 class OnboardingTest(unittest.TestCase):
-    def test_pasted_key_is_saved_to_credential_store_and_model_to_config(self):
-        keyring = Mock()
-        keyring.get_password.return_value = "key-fixture"
+    def test_first_start_saves_key_and_model_and_can_skip_exa(self):
         with (
             TemporaryDirectory() as directory,
+            patch.dict(os.environ, {}, clear=True),
             patch("agent_cook.settings.settings_directory", return_value=Path(directory)),
-            patch("agent_cook.settings._keyring", return_value=keyring),
-            patch("agent_cook.onboarding.getpass.getpass", return_value="key-fixture"),
+            patch("agent_cook.settings.stored_key", return_value=None),
+            patch("sys.stdin", Terminal()),
+            patch("agent_cook.cli.prompt_reader") as prompt,
+            patch("agent_cook.onboarding.getpass.getpass", side_effect=["key-fixture", ""]),
+            patch("agent_cook.onboarding.available_models", return_value=("demo/model",)),
             patch("agent_cook.onboarding._openrouter") as provider,
+            patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=RunResult("run", "Done.")) as run,
+            redirect_stdout(Terminal()) as output,
             redirect_stderr(io.StringIO()) as diagnostics,
         ):
-            answers = iter(["key", ""])
-            self.assertEqual(connect(
-                lambda _: next(answers), ModelChoices(("demo/model",), "demo/model"), api_key=None, model=None,
-            ), ("key-fixture", "demo/model"))
-            self.assertEqual(saved_model(), "demo/model")
-            self.assertEqual(stored_key(), "key-fixture")
-            self.assertEqual(json.loads((Path(directory) / "settings.json").read_bytes()), {"model": "demo/model"})
-        keyring.set_password.assert_called_once_with(SERVICE, ACCOUNT, "key-fixture")
-        keyring.get_password.assert_called_once_with(SERVICE, ACCOUNT)
+            prompt.return_value.side_effect = ["key", "1", "Hello.", "/config", "/exit"]
+            self.assertEqual(main(["-C", directory]), 0)
+            config = Path(directory) / "agent-cook.json"
+            document = json.loads(config.read_bytes())
+            self.assertEqual(document["api_keys"], {"openrouter": "key-fixture", "exa": None})
+            self.assertEqual(document["models"]["chat"], {"default": "demo/model", "available": ["demo/model"]})
+            self.assertIn(str(config.resolve()), output.getvalue())
+            if os.name == "posix":
+                self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
+            elif os.name == "nt":
+                icacls = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/icacls.exe"
+                permissions = check_output([icacls, config], encoding="utf-8", errors="replace")
+                self.assertIn("(F)", permissions)
+                self.assertNotIn("(I)", permissions)
+            self.assertFalse((config.parent / "settings.json").exists())
+        self.assertEqual(run.await_args.args[2], "key-fixture")
+        self.assertIsNone(run.await_args.kwargs["exa_api_key"])
         provider.assert_called_once_with("/key", key="key-fixture")
-        self.assertNotIn("key-fixture", diagnostics.getvalue())
+        self.assertNotIn("key-fixture", output.getvalue() + diagnostics.getvalue())
+
+    def test_editing_one_config_key_and_model_preserves_unrelated_settings(self):
+        with (
+            TemporaryDirectory() as directory,
+            patch.dict(os.environ, {}, clear=True),
+            patch("sys.stdin", Terminal()),
+            patch("agent_cook.cli.prompt_reader") as prompt,
+            patch("agent_cook.onboarding.getpass.getpass", side_effect=["new-exa-fixture", "invalid-key-fixture"]),
+            patch("agent_cook.onboarding._openrouter", side_effect=ValueError("OpenRouter returned HTTP 401.")),
+            patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=RunResult("run", "Done.")) as run,
+            redirect_stdout(Terminal()) as output,
+            redirect_stderr(io.StringIO()) as diagnostics,
+        ):
+            config = Path(directory) / "my settings.json"
+            config.write_text(json.dumps({
+                "api_keys": {"openrouter": "original-key-fixture", "exa": "old-exa-fixture", "e2b": "e2b-fixture"},
+                "models": {
+                    "chat": {"default": "demo/model", "available": ["demo/model"]},
+                    "image": {"default": "demo/image", "available": ["demo/image"]},
+                    "chat_apis": {"demo/model": "responses"},
+                },
+                "server": {"token": "server-fixture"},
+            }), encoding="utf-8")
+            prompt.return_value.side_effect = [
+                "/key", "exa", "/key openrouter", "/model demo/new", "/model", "/config", "Hello.", "/exit",
+            ]
+            arguments = ["-C", directory, "--config", config.name]
+            self.assertEqual(main(arguments), 0)
+            document = json.loads(config.read_bytes())
+            self.assertEqual(document["api_keys"], {
+                "openrouter": "original-key-fixture", "exa": "new-exa-fixture", "e2b": "e2b-fixture",
+            })
+            self.assertEqual(document["models"]["chat"], {
+                "default": "demo/new", "available": ["demo/model", "demo/new"],
+            })
+            self.assertEqual(document["models"]["image"]["default"], "demo/image")
+            self.assertEqual(document["models"]["chat_apis"], {"demo/model": "responses"})
+            self.assertEqual(document["server"], {"token": "server-fixture"})
+            self.assertEqual(main(["exec", *arguments, "Next launch."]), 0)
+        for attempt in run.await_args_list:
+            self.assertEqual(attempt.args[0].model, "demo/new")
+            self.assertEqual(attempt.args[2], "original-key-fixture")
+            self.assertEqual(attempt.kwargs["exa_api_key"], "new-exa-fixture")
+        transcript = output.getvalue() + diagnostics.getvalue()
+        self.assertIn("Current model  demo/new", transcript)
+        self.assertIn("OpenRouter returned HTTP 401.", transcript)
+        self.assertNotIn("-fixture", transcript)
+
+    def test_key_command_reports_an_environment_override(self):
+        with (
+            TemporaryDirectory() as directory,
+            patch.dict(os.environ, {"OPENROUTER_API_KEY": "env-fixture", "OPENROUTER_MODEL": "demo/model"}, clear=True),
+            patch("agent_cook.settings.settings_directory", return_value=Path(directory)),
+            patch("sys.stdin", Terminal()),
+            patch("agent_cook.cli.prompt_reader") as prompt,
+            patch("agent_cook.onboarding.getpass.getpass", return_value="new-fixture"),
+            patch("agent_cook.onboarding._openrouter"),
+            redirect_stdout(Terminal()) as output,
+            redirect_stderr(io.StringIO()),
+        ):
+            prompt.return_value.side_effect = ["/key openrouter", "/exit"]
+            self.assertEqual(main(["-C", directory]), 0)
+            config = json.loads((Path(directory) / "agent-cook.json").read_bytes())
+            self.assertEqual(config["api_keys"]["openrouter"], "new-fixture")
+        self.assertIn("configured via OPENROUTER_API_KEY", output.getvalue())
+        self.assertNotIn("-fixture", output.getvalue())
+
+    def test_existing_legacy_key_and_model_start_without_the_wizard(self):
+        with (
+            TemporaryDirectory() as directory,
+            patch.dict(os.environ, {}, clear=True),
+            patch("agent_cook.settings.settings_directory", return_value=Path(directory)),
+            patch("agent_cook.settings._keyring") as keyring,
+            patch("agent_cook.cli.connect") as wizard,
+            patch("sys.stdin", Terminal()),
+            patch("agent_cook.cli.prompt_reader") as prompt,
+            redirect_stdout(Terminal()) as output,
+            redirect_stderr(io.StringIO()),
+        ):
+            keyring.return_value.get_password.return_value = "legacy-fixture"
+            (Path(directory) / "settings.json").write_text('{"model": "legacy/chat"}', encoding="utf-8")
+            prompt.return_value.side_effect = ["/config", "/exit"]
+            self.assertEqual(main(["-C", directory]), 0)
+        wizard.assert_not_called()
+        keyring.return_value.get_password.assert_called_with(SERVICE, ACCOUNT)
+        self.assertIn("configured via legacy system credential store", output.getvalue())
+        self.assertIn("Current model  legacy/chat", output.getvalue())
 
     def test_browser_authorization_uses_loopback_and_pkce(self):
         thread = None

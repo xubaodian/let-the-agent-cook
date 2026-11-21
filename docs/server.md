@@ -4,7 +4,7 @@
 
 ## 启动
 
-用 `./cook setup` 准备环境，在 `agent-cook.json` 填写 `api_keys.openrouter`、`models.chat` 和独立的 `server.token`。也可在同一文件配置 Exa、E2B、生图模型和服务默认值。[配置示例](../agent-cook.example.json)
+用 `./install` 或 `install.cmd` 准备环境，在系统用户目录的 `agent-cook.json` 填写 `api_keys.openrouter`、`models.chat` 和独立的 `server.token`。同一文件可配置 Exa、E2B、生图模型和服务默认值。[配置位置](install.md#配置) · [配置示例](../agent-cook.example.json)
 
 ```bash
 ./cook serve --host 127.0.0.1 --port 8000 --concurrency 2
@@ -31,7 +31,7 @@
 
 ## 容器部署
 
-在仓库根目录构建服务镜像。使用命名卷保留数据。容器可读取 `/data/agent-cook.json`，把文件提供给容器用户即可。也可以复制 `.env.example` 为 `.env`、填入配置，再用下面的 `--env-file` 启动。
+在仓库根目录构建服务镜像。使用命名卷保留数据。可将配置文件提供给容器用户，并在镜像名之后添加 `--config /data/agent-cook.json`。也可以复制 `.env.example` 为 `.env`、填入配置，再用下面的 `--env-file` 启动。
 
 ```bash
 docker build -f agent/Dockerfile.server -t agent-cook-server:local agent
@@ -39,4 +39,4 @@ docker run --rm --env-file .env -p 127.0.0.1:8000:8000 \
   -v agent-cook-data:/data agent-cook-server:local --sandbox none
 ```
 
-服务镜像也支持配置 `E2B_API_KEY` 和 `E2B_TEMPLATE` 后传入 `--sandbox e2b`。使用宿主 Docker 作为任务后端时，可在宿主机上运行 `./cook serve --sandbox docker`，并用 `./cook setup --docker` 准备任务镜像。
+服务镜像也支持配置 `E2B_API_KEY` 和 `E2B_TEMPLATE` 后传入 `--sandbox e2b`。使用宿主 Docker 作为任务后端时，可用 `./cook docker` 准备任务镜像，再运行 `./cook serve --sandbox docker`。
