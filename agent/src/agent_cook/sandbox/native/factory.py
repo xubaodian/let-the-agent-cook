@@ -128,14 +128,14 @@ class NativeSandbox:
             arguments["windows_launcher"] = launcher
             arguments["windows_scratch"] = str(self.scratch)
         result = await execute(
-            [str(python), "-I", str(program)], root=self.root, cwd=self.workspace.root,
+            [str(python), "-I", "-B", str(program)], root=self.root, cwd=self.workspace.root,
             reads=(*reads, chromium, program.parent), env=env, timeout=timeout, maximum=64 * 1024,
             payload=json.dumps(arguments, ensure_ascii=False).encode(), browser_controller=windows,
         )
         if result.timed_out or result.exit_code:
             output = result.stderr.strip()
-            if len(output) > 1500:
-                output = output[:700] + "\n…\n" + output[-750:]
+            if len(output) > 3500:
+                output = output[:2700] + "\n…\n" + output[-750:]
             raise SandboxError(f"Local Chromium preview failed (exit {result.exit_code}). {output}")
         return json.loads(result.stdout)
 
@@ -157,16 +157,22 @@ class NativeSandbox:
                 raise SandboxError(str(error)[:600]) from error
             raise SandboxError(f"The native workspace does not support {operation!r}.")
 
-    async def probe(self, *, python: bool = False) -> None:
-        if python:
-            argv = ("python", "-I", "-c", "import openpyxl, pptx, playwright")
+    async def probe(self, *, runtime: bool = False) -> None:
+        if runtime:
+            commands = (("python", "-I", "-B", "-c", "import openpyxl, pptx, playwright"), ("node", "--version"))
         else:
-            argv = ("cmd", "/d", "/c", "exit", "0") if sys.platform == "win32" else ("true",)
-        result = await self.exec(argv, cwd=".", timeout_seconds=15 if python else 5)
-        if result.exit_code or result.timed_out:
-            raise SandboxError(
-                f"Native isolation probe failed (exit {result.exit_code}). {result.stderr.strip()[:400]}"
-            )
+            commands = (("cmd", "/d", "/c", "exit", "0"),) if sys.platform == "win32" else (("true",),)
+        for argv in commands:
+            result = await self.exec(argv, cwd=".", timeout_seconds=15 if runtime else 5)
+            if result.exit_code or result.timed_out:
+                raise SandboxError(
+                    f"Native isolation probe failed for {argv[0]} (exit {result.exit_code}). {result.stderr.strip()[:400]}"
+                )
+        if runtime:
+            await self.put_file("doctor.html", b"<title>Agent Cook</title><p>Workspace ready</p>")
+            result = await self.request("playwright", {"path": "doctor.html"}, timeout_seconds=65)
+            if result.get("title") != "Agent Cook":
+                raise SandboxError("The native browser could not render the diagnostic page.")
 
 
 class NativeSandboxFactory:
@@ -175,6 +181,6 @@ class NativeSandboxFactory:
         with TemporaryDirectory(prefix="agent-cook-") as path:
             yield NativeSandbox(Path(path))
 
-    async def probe(self, *, python: bool = False) -> None:
+    async def probe(self, *, runtime: bool = False) -> None:
         async with self.open("doctor") as sandbox:
-            await sandbox.probe(python=python)
+            await sandbox.probe(runtime=runtime)

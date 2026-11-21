@@ -7,7 +7,7 @@ import sys
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, unquote, urlsplit
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Error, sync_playwright
 
 _ORIGIN = "http://agent-cook-workspace.invalid"
 _LIMIT = 16 * 1024 * 1024
@@ -15,7 +15,8 @@ _LIMIT = 16 * 1024 * 1024
 
 def open_browser(playwright, request):
     if "windows_launcher" not in request:
-        return playwright.chromium.launch()
+        switches = ["--single-process", "--disable-gpu"] if sys.platform == "darwin" else []
+        return playwright.chromium.launch(args=switches)
     from playwright._impl._driver import compute_driver_executable
 
     # The driver creates its pipes on the host. The launcher binds the same pipes
@@ -97,4 +98,8 @@ def preview(request: dict) -> dict:
 
 if __name__ == "__main__":
     request = json.load(sys.stdin.buffer)
-    sys.stdout.buffer.write(json.dumps(preview(request), ensure_ascii=False).encode("utf-8"))
+    try:
+        sys.stdout.buffer.write(json.dumps(preview(request), ensure_ascii=False).encode("utf-8"))
+    except Error as error:
+        print(error, file=sys.stderr)
+        raise SystemExit(1) from None

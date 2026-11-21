@@ -55,7 +55,7 @@ sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 
 ## 构建和发布
 
-PR 的 [Actions](https://github.com/xubaodian/let-the-agent-cook/actions) 构建三端安装包，在对应的托管 runner 安装，验证入口和随包准备的工作区 Python。部署方可用仓库变量 `AGENT_COOK_MODELS_JSON` 以 [models.example.json](../models.example.json) 的格式向安装包提供公开候选模型。也可在本地打包时传 `--models models.json`。
+PR 的 [Actions](https://github.com/xubaodian/let-the-agent-cook/actions) 构建三端安装包，在对应的托管 runner 安装，验证入口及 Python、Node.js、Chromium。部署方可用仓库变量 `AGENT_COOK_MODELS_JSON` 以 [models.example.json](../models.example.json) 的格式向安装包提供公开候选模型。也可在本地打包时传 `--models models.json`。
 
 维护者发布时使用与 `agent/pyproject.toml` 匹配的版本标签，例如 `v0.1.0`。发布流水线安装锁定的依赖，签署 Windows MSI，签署并公证 macOS PKG，并构建供 HTTP 服务调用的 Linux amd64 和 arm64 工作区镜像。首次发布需要把 GHCR 中的 `agent-cook-sandbox` 包设为公开，供服务端拉取。流水线验证两个架构都可匿名读取后上传安装包。下载页源码位于 [docs/download/index.html](download/index.html)，可以随仓库的 `docs/` 部署。 [Windows 安装范围](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) · [Apple 公证](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) · [多架构镜像](https://docs.docker.com/build/building/multi-platform/)
 

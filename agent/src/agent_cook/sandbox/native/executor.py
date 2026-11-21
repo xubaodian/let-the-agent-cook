@@ -15,7 +15,7 @@ _MAC_SERVICES = (
     "com.apple.system.logger", "com.apple.cfprefsd.agent", "com.apple.cfprefsd.daemon",
     "com.apple.system.opendirectoryd.libinfo", "com.apple.system.notification_center",
     "com.apple.SecurityServer", "com.apple.trustd", "com.apple.trustd.agent",
-    "com.apple.PowerManagement.control",
+    "com.apple.PowerManagement.control", "com.apple.logd",
 )
 
 
@@ -62,6 +62,8 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...]) -> list[str]
 (allow file-map-executable {readable})
 (allow file-write* {writable} (literal "/dev/null") (literal "/dev/zero"))
 (allow mach-lookup {services})
+(allow iokit-open (iokit-registry-entry-class "RootDomainUserClient"))
+(allow ipc-posix-shm-read-data (ipc-posix-name "apple.shm.notification_center"))
 """
     return [str(executable), "-p", profile, "--", *argv]
 
