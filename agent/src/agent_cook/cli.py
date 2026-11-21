@@ -20,7 +20,7 @@ from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.delivery import publish_results, result_snapshots
 from agent_cook.events.journal import RunEvents, write_jsonl
 from agent_cook.local_files import PortablePaths, collect_inputs, portable_path
-from agent_cook.model.catalog import ModelCatalog
+from agent_cook.model.catalog import MODEL_APIS, ModelCatalog
 from agent_cook.onboarding import connect
 from agent_cook.protocol.events import RunEvent
 from agent_cook.protocol.request import RunRequest
@@ -30,7 +30,9 @@ from agent_cook.sandbox.docker_setup import DockerSetupError, check_linux_docker
 from agent_cook.sandbox.e2b import E2BSandboxFactory
 from agent_cook.sandbox.interface import SandboxError, SandboxFactory
 from agent_cook.sandbox.limits import MAX_TRANSFER_BYTES
-from agent_cook.settings import DATA, CredentialStoreError, model_catalog, release_image, saved_model, stored_key
+from agent_cook.settings import (
+    DATA, AgentConfig, CredentialStoreError, model_catalog, release_image, saved_model, stored_key,
+)
 from agent_cook.state.local import LocalSession, LocalSessions
 from agent_cook.terminal import file_mentions, prompt_reader, show_progress
 
@@ -47,6 +49,8 @@ def _chat_model(args: argparse.Namespace, catalog: ModelCatalog, requested: str 
     selected = _select_model(args.model, requested, "OPENROUTER_MODEL", getattr(args, "session_model", None))
     if selected or args.model is not None:
         return selected
+    if args.models_config is None and args.config.models is not None and catalog.chat.default is not None:
+        return catalog.chat.default
     return saved_model() or catalog.chat.default
 
 
@@ -94,12 +98,16 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
     if not chat_model:
         raise ValueError(
             "Choose a chat model via --model, the task's model, OPENROUTER_MODEL, "
-            "or chat.default in --models-config. Open agent-cook in a terminal for guided setup."
+            "or models.chat.default in agent-cook.json. Open agent-cook in a terminal for guided setup."
         )
+    model_api = _select_model(args.model_api, request.model_api, "OPENROUTER_MODEL_API", args.config.model_api)
+    if model_api is not None and model_api not in MODEL_APIS:
+        raise ValueError("OPENROUTER_MODEL_API must be chat_completions or responses.")
     if (args.image_model is not None or request.image_model is not None) and args.sandbox is None:
         raise ValueError("Selecting an image model for the task requires --sandbox.")
     image_model = _select_model(
-        args.image_model, request.image_model, "OPENROUTER_IMAGE_MODEL", catalog.image.default,
+        args.image_model, request.image_model, "OPENROUTER_IMAGE_MODEL",
+        getattr(args, "session_image_model", None) or catalog.image.default,
     )
     spec = AgentSpec(
         model=chat_model, max_model_turns=args.max_turns, timeout_seconds=args.timeout,
@@ -111,11 +119,13 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
     if args.sandbox == "docker":
         make_sandbox = partial(DockerSandboxFactory, args.docker_image)
     elif args.sandbox == "e2b":
-        if not os.environ.get("E2B_API_KEY", "").strip():
-            raise ValueError("Set E2B_API_KEY before using the remote sandbox.")
+        key = args.config.api_key("e2b")
+        if not key:
+            raise ValueError("Set api_keys.e2b in agent-cook.json or E2B_API_KEY before using the remote sandbox.")
         make_sandbox = partial(
             E2BSandboxFactory,
-            os.environ.get("E2B_TEMPLATE", ""),
+            args.config.e2b_template,
+            api_key=key,
             lifetime_seconds=ceil(spec.timeout_seconds) + 60,
         )
     factory = make_sandbox(allow_network=args.sandbox_network) if make_sandbox else None
@@ -140,8 +150,10 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
     ):
         raise ValueError("Mounted skills, plugin files, and hooks require --sandbox.")
     return spec, factory, {
+        "model_api": model_api, "model_apis": catalog.chat_apis,
         "image_model": image_model, "skills": skills, "plugins": plugins,
         "mcp_tools": request.mcp_tools, "web": request.web, "browser_factory": browser_factory,
+        "exa_api_key": args.config.api_key("exa"),
     }
 
 
@@ -159,22 +171,24 @@ def _parser(mode: str) -> argparse.ArgumentParser:
         previous.add_argument("session_id", nargs="?", help="ID printed by the previous interactive session")
         previous.add_argument("--last", action="store_true", help="Resume the latest session in this directory")
     if mode == "serve":
-        parser.add_argument("--host", default="127.0.0.1", help="Listening address")
-        parser.add_argument("--port", type=int, default=8000, help="Listening port")
-        parser.add_argument("--data-dir", type=Path, default=Path(".agent-cook/server"), help="Persistent server data")
-        parser.add_argument("--concurrency", type=int, default=1, help="Maximum number of concurrent runs")
+        parser.add_argument("--host", help="Listening address")
+        parser.add_argument("--port", type=int, help="Listening port")
+        parser.add_argument("--data-dir", type=Path, help="Persistent server data")
+        parser.add_argument("--concurrency", type=int, help="Maximum number of concurrent runs")
     parser.add_argument("-C", "--cd", type=Path, help="Use this directory for task paths and interactive sessions")
     parser.add_argument("--request", type=Path, help="Read the task, model choices and extensions from a JSON request")
+    parser.add_argument("--config", dest="config_path", type=Path, help="Use a local agent-cook.json configuration")
     parser.add_argument("--models-config", type=Path, help="Use a custom JSON model catalog")
     parser.add_argument("--list-models", action="store_true", help="Print the configured chat and image models as JSON")
     parser.add_argument("-m", "--model", help="Chat model ID (or set OPENROUTER_MODEL)")
+    parser.add_argument("--model-api", choices=MODEL_APIS, help="OpenRouter chat protocol (or set OPENROUTER_MODEL_API)")
     parser.add_argument("--image-model", help="Image API model ID (or set OPENROUTER_IMAGE_MODEL)")
     if mode in ("local", "exec"):
         parser.add_argument("--json", action="store_true", help="Stream JSONL run events on stdout")
     parser.add_argument("--trace", type=Path, help="Write the run to a new JSONL file at this path")
     parser.add_argument("--sandbox", choices=("docker", "e2b", "none"), help="Enable task workspace tools")
     parser.add_argument("--docker-image", help="Use a specific prebuilt sandbox image")
-    parser.add_argument("--sandbox-network", action="store_true", help="Enable outbound sandbox networking")
+    parser.add_argument("--sandbox-network", action=argparse.BooleanOptionalAction, help="Allow sandbox networking")
     parser.add_argument("--input", action="append", type=Path, default=[], help="Copy a local file or folder into the workspace")
     parser.add_argument(
         "--skills-dir", action="append", type=Path, default=[], help="Load a directory of Skill packages",
@@ -183,17 +197,15 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument("--plugin", action="append", type=Path, default=[], help="Enable a local plugin directory")
     parser.add_argument("--mcp-tool", action="append", help="Enable an MCP tool by server/tool. Repeat to select several.")
     parser.add_argument(
-        "--context-window", type=int, default=DEFAULT_CONTEXT_POLICY.context_window,
-        help="Context window in tokens for the selected model (default: %(default)s).",
+        "--context-window", type=int, help="Context window in tokens for the selected model",
     )
-    parser.add_argument("--max-turns", type=int, default=8, help="Maximum number of model turns")
-    parser.add_argument("--timeout", type=float, default=120, help="Run time limit in seconds")
+    parser.add_argument("--max-turns", type=int, help="Maximum number of model turns")
+    parser.add_argument("--timeout", type=float, help="Run time limit in seconds")
     return parser
 
 
-def _api_key(*, required: bool = True) -> str | None:
-    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if key:
+def _api_key(config: AgentConfig, *, required: bool = True) -> str | None:
+    if key := config.api_key("openrouter"):
         return key
     try:
         if key := stored_key():
@@ -201,16 +213,42 @@ def _api_key(*, required: bool = True) -> str | None:
     except CredentialStoreError:
         pass
     if required:
-        raise ValueError("Set OPENROUTER_API_KEY or open agent-cook in a terminal to connect OpenRouter.")
+        raise ValueError(
+            "Set api_keys.openrouter in agent-cook.json or OPENROUTER_API_KEY, "
+            "or open agent-cook in a terminal to connect OpenRouter."
+        )
     return None
 
 
 def _paths(args: argparse.Namespace, directory: Path) -> None:
-    for key in ("request", "models_config", "trace", "data_dir"):
+    for key in ("request", "config_path", "models_config", "trace", "data_dir"):
         if (path := getattr(args, key, None)) is not None:
             setattr(args, key, directory / path.expanduser())
     for key in ("input", "plugin", "skills_dir"):
         setattr(args, key, [directory / path.expanduser() for path in getattr(args, key)])
+
+
+def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCatalog:
+    config = args.config = AgentConfig.load(directory, args.config_path)
+    args.sandbox = args.sandbox or os.environ.get("AGENT_COOK_SANDBOX", "").strip() or config.sandbox.get("backend")
+    if args.sandbox_network is None:
+        args.sandbox_network = config.sandbox.get("network", False)
+    args.release_image = release_image()
+    args.docker_image = (
+        args.docker_image or config.sandbox.get("docker_image") or args.release_image or DEFAULT_DOCKER_IMAGE
+    )
+    for name, default in (("context_window", DEFAULT_CONTEXT_POLICY.context_window), ("max_turns", 8), ("timeout", 120)):
+        if getattr(args, name) is None:
+            setattr(args, name, config.run.get(name, default))
+    if mode == "serve":
+        for name, default in (("host", "127.0.0.1"), ("port", 8000), ("concurrency", 1)):
+            if getattr(args, name) is None:
+                setattr(args, name, config.server.get(name, default))
+        data_dir = Path(config.server.get("data_dir") or ".agent-cook/server").expanduser()
+        args.data_dir = args.data_dir or directory / data_dir
+    if args.models_config is not None or config.models is None:
+        return model_catalog(args.models_config)
+    return config.models
 
 
 def _request(args: argparse.Namespace, task: str) -> RunRequest:
@@ -282,15 +320,14 @@ def _example(directory: Path) -> Path:
 def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalog, resume: bool) -> int:
     store = LocalSessions(directory / ".agent-cook" / "sessions.sqlite3")
     saved = store.load(args.session_id) if resume else LocalSession()
-    selected = args.sandbox or os.environ.get("AGENT_COOK_SANDBOX", "").strip() or saved.sandbox
+    selected = args.sandbox or saved.sandbox
     _set_sandbox(args, selected, has_inputs=bool(args.input or saved.inputs or saved.results))
     args.session_model = saved.model
-    if args.image_model is None and args.sandbox is not None:
-        args.image_model = saved.image_model
+    args.session_image_model = saved.image_model
     terminal = sys.stdin.isatty() and sys.stdout.isatty()
     read = prompt_reader(directory) if terminal else input
     pending = list(args.input)
-    api_key = _api_key(required=False)
+    api_key = _api_key(args.config, required=False)
 
     def setup() -> None:
         nonlocal api_key
@@ -323,6 +360,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
             if command == "/new":
                 saved = LocalSession()
                 args.session_model = None
+                args.session_image_model = None
                 pending.clear()
                 print(f"Session {saved.id}", file=sys.stderr)
             elif command == "/files":
@@ -340,6 +378,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                         selected = value
                         if args.sandbox is None:
                             args.image_model = None
+                            args.session_image_model = None
                     except ValueError as error:
                         _failure(error)
                 else:
@@ -387,7 +426,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
             while True:
                 try:
                     result, trace, delivered = _execute(
-                        args, directory, prepared, request.task, api_key or _api_key(), staged,
+                        args, directory, prepared, request.task, api_key or _api_key(args.config), staged,
                         observer=show_progress, session=history,
                     )
                     break
@@ -411,6 +450,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                 result_dir=str(delivered) if delivered else saved.result_dir,
             ))
             args.session_model = spec.model
+            args.session_image_model = options["image_model"]
             args.trace = None
             pending.clear()
         except (KeyboardInterrupt, asyncio.CancelledError):
@@ -424,7 +464,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
 def _doctor(args: argparse.Namespace, catalog: ModelCatalog) -> int:
     checks = {
         "Python OpenAI SDK": bool(find_spec("openai")),
-        "OpenRouter API key configured": bool(_api_key(required=False)),
+        "OpenRouter API key configured": bool(_api_key(args.config, required=False)),
         "Chat model configured": bool(_chat_model(args, catalog)),
     }
     if args.sandbox == "docker":
@@ -442,19 +482,17 @@ def _doctor(args: argparse.Namespace, catalog: ModelCatalog) -> int:
                 print("Run ./cook setup --docker to build the development image.", file=sys.stderr)
     if args.sandbox == "e2b":
         checks["E2B SDK"] = bool(find_spec("e2b"))
-        checks["E2B credentials and template"] = all(
-            os.environ.get(name, "").strip() for name in ("E2B_API_KEY", "E2B_TEMPLATE")
-        )
+        checks["E2B credentials and template"] = bool(args.config.api_key("e2b") and args.config.e2b_template)
     for label, available in checks.items():
         print(f"{'OK' if available else 'Missing'}  {label}")
     return 0 if all(checks.values()) else 1
 
 
 def _serve(args, catalog: ModelCatalog) -> int:
-    token = os.environ.get("AGENT_COOK_SERVER_TOKEN", "").strip()
+    token = os.environ.get("AGENT_COOK_SERVER_TOKEN", "").strip() or (args.config.server.get("token") or "").strip()
     if not token:
-        raise ValueError("Set a separate AGENT_COOK_SERVER_TOKEN before starting the HTTP service.")
-    api_key = _api_key()
+        raise ValueError("Set server.token in agent-cook.json or AGENT_COOK_SERVER_TOKEN for the HTTP service.")
+    api_key = _api_key(args.config)
     spec, factory, options = _prepare(args, _request(args, "Service defaults"), catalog)
     try:
         import uvicorn
@@ -500,11 +538,12 @@ def main(argv: list[str] | None = None) -> int:
         if not directory.is_dir():
             raise ValueError("--cd must name a directory.")
         _paths(args, directory)
-        catalog = model_catalog(args.models_config)
-        args.release_image = release_image()
-        args.docker_image = args.docker_image or args.release_image or DEFAULT_DOCKER_IMAGE
+        catalog = _configure(args, directory, mode)
         if args.list_models:
-            print(json.dumps(asdict(catalog), indent=2))
+            configured_models = asdict(catalog)
+            if not catalog.chat_apis:
+                del configured_models["chat_apis"]
+            print(json.dumps(configured_models, indent=2))
             return 0
         interactive = mode == "resume" or (mode == "local" and args.task is None and args.request is None)
         if interactive:
@@ -513,8 +552,7 @@ def main(argv: list[str] | None = None) -> int:
             if getattr(args, "json", False):
                 raise ValueError("Use exec --json for machine-readable output.")
             return _interactive(args, directory, catalog, mode == "resume")
-        configured = os.environ.get("AGENT_COOK_SANDBOX", "").strip() or None
-        _set_sandbox(args, args.sandbox or configured, has_inputs=bool(args.input))
+        _set_sandbox(args, args.sandbox, has_inputs=bool(args.input))
         if args.request is not None and (
             getattr(args, "task", None) is not None or args.plugin or args.skills_dir or args.skill or args.mcp_tool
         ):
@@ -525,7 +563,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.input or args.trace:
                 raise ValueError("The server accepts files and records traces per submitted run.")
             return _serve(args, catalog)
-        api_key = _api_key()
+        api_key = _api_key(args.config)
         task = sys.stdin.read() if mode == "exec" and args.task == "-" else (args.task or "")
         request = _request(args, task)
         prepared = _prepare(args, request, catalog)

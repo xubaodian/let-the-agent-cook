@@ -88,7 +88,7 @@ Python 脚本在任务沙箱里执行，工作目录是工作区根目录。从 
 
 ## MCP
 
-可选的 `mcp.json` 使用 Agent Plugins 的 MCP schema 和 `mcpServers` 对象。支持 `stdio` 与 `streamable-http`。安装 MCP 依赖时可传 `uv sync --project agent --extra mcp`。[Agent Plugins MCP 运行规范](https://agent-plugins.org/client-implementers/mcp-runtime)
+可选的 `mcp.json` 使用 Agent Plugins 的 MCP schema 和 `mcpServers` 对象。支持 `stdio` 与 `streamable-http`。MCP 客户端随 Agent Cook 安装。[Agent Plugins MCP 运行规范](https://agent-plugins.org/client-implementers/mcp-runtime)
 
 ```json
 {

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from agent_cook.cli import main
-from agent_cook.model.openrouter_images import OpenRouterImageGenerator
+from agent_cook.model.openrouter_images import ImageGenerationError, OpenRouterImageGenerator
 from agent_cook.tools.images import register_image_tool
 from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.spec import ToolCall, ToolContext
@@ -130,6 +130,28 @@ class ImageCliTest(unittest.TestCase):
 
 
 class ImageFailureTest(unittest.IsolatedAsyncioTestCase):
+    async def test_image_generation_retries_rate_limits_and_stops_on_an_ambiguous_timeout(self):
+        limited = FixtureStatusError("rate limited")
+        limited.status_code = 429
+        limited.response = SimpleNamespace(headers={"Retry-After": "0.8"})
+        post = AsyncMock(side_effect=[limited, {"data": [{"b64_json": _PNG}]}])
+        client = SimpleNamespace(with_options=Mock(return_value=SimpleNamespace(post=post)))
+        generator = OpenRouterImageGenerator(client, "fixture/image")
+        with (
+            patch.dict(sys.modules, {"openai": sdk_module()}),
+            patch("agent_cook.retry.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        ):
+            image = await generator.generate("Skyline")
+            self.assertEqual(image.content, base64.b64decode(_PNG))
+            self.assertEqual(post.await_count, 2)
+            sleep.assert_awaited_once_with(0.8)
+
+            post.reset_mock()
+            post.side_effect = FixtureTimeoutError()
+            with self.assertRaisesRegex(ImageGenerationError, "timed out"):
+                await generator.generate("Skyline")
+            post.assert_awaited_once()
+
     async def test_invalid_paths_and_provider_failures_do_not_write_files(self):
         post = AsyncMock()
         client = SimpleNamespace(with_options=Mock(return_value=SimpleNamespace(post=post)))

@@ -4,13 +4,19 @@ import os
 import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from importlib.util import find_spec
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from httpx import Timeout
+
 from agent_cook.cli import main
+from agent_cook.core.types import AgentSpec
+from agent_cook.events.journal import RunEvents
 from agent_cook.model.openrouter import OPENROUTER_BASE_URL, OpenRouterModel
+from agent_cook.runner import run_task
 from agent_cook.state.session import Message
 from agent_cook.tools.spec import ToolDefinition
 
@@ -97,8 +103,66 @@ class CliTest(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(duplicate_status, 1)
         self.assertEqual(stdout.getvalue(), "The kitchen is ready.\n")
-        self.assertEqual(constructor_args, [{"api_key": "test-key", "base_url": OPENROUTER_BASE_URL}])
+        self.assertEqual(constructor_args, [{
+            "api_key": "test-key", "base_url": OPENROUTER_BASE_URL, "max_retries": 2,
+            "timeout": Timeout(90.0, connect=5.0),
+        }])
         self.assertNotIn("tools", create.call_args.kwargs)
         self.assertNotIn("test-key", raw_trace)
         self.assertEqual([event["seq"] for event in events], [1, 2, 3, 4])
         self.assertEqual(events[-1]["data"]["text"], "The kitchen is ready.")
+
+
+@unittest.skipUnless(find_spec("openai"), "Requires the locked OpenAI SDK.")
+class ModelRetryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_model_requests_recover_from_transient_errors_on_both_endpoints(self):
+        from test_openrouter_responses import reply, text_item
+
+        chat = {
+            "id": "fixture", "object": "chat.completion", "created": 1, "model": "fixture/model",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "Done."}, "finish_reason": "stop"}],
+        }
+        for api, endpoint, answer in (
+            ("chat_completions", "/api/v1/chat/completions", chat),
+            ("responses", "/api/v1/responses", reply(text_item("Done."))),
+        ):
+            with self.subTest(api=api):
+                requested, result = await self._run_requests(api, [429, 503, answer])
+                self.assertEqual(result, "Done.")
+                self.assertEqual(requested, [endpoint] * 3)
+
+    async def test_model_requests_stop_on_a_permanent_error_or_after_two_retries(self):
+        for statuses, expected in (([401], 401), ([503, 503, 503], 503)):
+            with self.subTest(statuses=statuses):
+                requested, result = await self._run_requests("responses", statuses)
+                self.assertEqual(result, expected)
+                self.assertEqual(requested, ["/api/v1/responses"] * len(statuses))
+
+    async def _run_requests(self, api, replies):
+        import httpx
+        from openai import APIStatusError, AsyncOpenAI
+
+        requests = []
+        payloads = iter(replies)
+
+        def respond(request):
+            requests.append(request.url.path)
+            output = next(payloads)
+            if isinstance(output, int):
+                return httpx.Response(
+                    output, headers={"retry-after-ms": "1"}, json={"error": {"message": "Test failure"}},
+                )
+            return httpx.Response(200, json=output)
+
+        def client(**kwargs):
+            return AsyncOpenAI(**kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+
+        with TemporaryDirectory() as directory, patch("openai.AsyncOpenAI", side_effect=client):
+            try:
+                result = await run_task(
+                    AgentSpec("fixture/model", timeout_seconds=10), "Test model retries.", "fixture-key",
+                    None, {}, events=RunEvents(), artifact_dir=Path(directory), model_api=api,
+                )
+            except APIStatusError as error:
+                return requests, error.status_code
+        return requests, result.text

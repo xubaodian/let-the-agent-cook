@@ -44,12 +44,7 @@ class OpenRouterModel:
         if web_enabled:
             # The SDK's typed chat tools do not describe OpenRouter's hosted tool types.
             request.setdefault("extra_body", {})["tools"] = [
-                *request.pop("tools", []),
-                {
-                    "type": "openrouter:web_search",
-                    "parameters": {"max_uses": 3, "max_results": 5, "max_total_results": 15},
-                },
-                {"type": "openrouter:web_fetch", "parameters": {"max_uses": 3, "max_content_tokens": 4000}},
+                *request.pop("tools", []), *_hosted_web_tools(),
             ]
 
         response = await self._client.chat.completions.create(**request)
@@ -83,6 +78,16 @@ class OpenRouterModel:
             web_usage=_web_usage(usage) if web_enabled else {},
             web_sources=_web_sources(raw_message) if web_enabled else (),
         )
+
+
+def _hosted_web_tools() -> list[dict[str, object]]:
+    return [
+        {
+            "type": "openrouter:web_search",
+            "parameters": {"max_uses": 3, "max_results": 5, "max_total_results": 15},
+        },
+        {"type": "openrouter:web_fetch", "parameters": {"max_uses": 3, "max_content_tokens": 4000}},
+    ]
 
 
 def _field(value: object, key: str) -> Any:

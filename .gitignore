@@ -1,4 +1,5 @@
 .agent-cook/
+agent-cook.json
 .env
 .env.*
 !.env.example

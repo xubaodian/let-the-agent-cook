@@ -4,13 +4,13 @@
 
 ## 启动
 
-用 `./cook setup` 准备环境，在 `.env` 配置 `OPENROUTER_API_KEY`、`OPENROUTER_MODEL` 和独立的 `AGENT_COOK_SERVER_TOKEN`。
+用 `./cook setup` 准备环境，在 `agent-cook.json` 填写 `api_keys.openrouter`、`models.chat` 和独立的 `server.token`。也可在同一文件配置 Exa、E2B、生图模型和服务默认值。[配置示例](../agent-cook.example.json)
 
 ```bash
 ./cook serve --host 127.0.0.1 --port 8000 --concurrency 2
 ```
 
-加入 `--sandbox docker` 或 `--sandbox e2b` 可接收文件、运行脚本和交付产物。用 `--data-dir` 指定持久化目录。每个数据目录由一个服务进程使用。可用 `--models-config` 提供候选模型，或用 `--request` 加载部署者维护的模型和扩展配置。请求里的任务、附件 ID 与模型选项通过 HTTP 提交。
+加入 `--sandbox docker` 或 `--sandbox e2b` 可接收文件、运行脚本和交付产物。用 `server.data_dir` 或 `--data-dir` 指定持久化目录。每个数据目录由一个服务进程使用。用 `--config` 指定配置文件，或用 `--request` 加载部署者维护的任务和扩展选项。请求里的任务、附件 ID 与模型选项通过 HTTP 提交。
 
 ## API
 
@@ -31,7 +31,7 @@
 
 ## 容器部署
 
-在仓库根目录构建服务镜像。使用命名卷保留数据。
+在仓库根目录构建服务镜像。使用命名卷保留数据。容器可读取 `/data/agent-cook.json`，把文件提供给容器用户即可。也可以复制 `.env.example` 为 `.env`、填入配置，再用下面的 `--env-file` 启动。
 
 ```bash
 docker build -f agent/Dockerfile.server -t agent-cook-server:local agent

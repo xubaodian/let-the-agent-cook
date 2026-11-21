@@ -42,6 +42,17 @@ jobs:
         env:
           AGENT_COOK_TEST_DOCKER_IMAGE: agent-cook-sandbox:local
         run: uv run --project agent --locked python -m unittest discover -s agent/tests -p test_docker_delivery.py -v
+      - name: Validate three PowerPoint deliveries in Docker
+        env:
+          AGENT_COOK_TEST_DOCKER_IMAGE: agent-cook-sandbox:local
+          AGENT_COOK_TEST_PPT_OUTPUT: ${{ runner.temp }}/pptx-fixtures
+        run: uv run --project agent --locked --extra examples python -m unittest discover -s agent/tests -p test_pptx_responses.py -v
+      - uses: actions/upload-artifact@v7
+        if: matrix.runner == 'ubuntu-24.04'
+        with:
+          name: pptx-protocol-fixtures
+          path: ${{ runner.temp }}/pptx-fixtures
+          if-no-files-found: error
       - name: Build the service image
         run: docker build -f agent/Dockerfile.server -t agent-cook-server:local agent
       - name: Verify the packaged service entry point

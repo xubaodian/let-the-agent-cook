@@ -8,7 +8,7 @@
 
 ## 从源码运行
 
-在仓库根目录运行 `./cook setup`。`uv` 准备 Python 3.12，按 `agent/uv.lock` 安装项目依赖，并创建首次使用的配置文件。在 `.env` 填写 `OPENROUTER_API_KEY` 和你选择的 `OPENROUTER_MODEL` 后即可启动。
+在仓库根目录运行 `./cook setup`。`uv` 准备 Python 3.12，按 `agent/uv.lock` 安装依赖，并创建本地 `agent-cook.json`。填写 `api_keys.openrouter`，把一个模型 ID 填入 `models.chat.available` 和 `models.chat.default` 后即可启动。
 
 ```bash
 ./cook setup
@@ -37,15 +37,17 @@
 
 仓库提供 9 个 Skill 和 `reporting-studio`、`web-studio` 两个示例插件，可以运行经营复盘、活动报名站和双插件交付任务。[示例和运行命令](examples/README.md)
 
-任务可用 `web.enabled` 开启 OpenRouter 搜索和正文抓取，用 `web.browser_origins` 为 Playwright 指定公网来源。[网页检索和浏览器补查](docs/workspace-tools.md#网页检索和浏览器补查)
+配置 `api_keys.exa` 或 `EXA_API_KEY` 后自动获得 Exa 网页搜索和正文抓取。任务可用 `web.browser_origins` 为 Playwright 指定公网来源。[网页检索和浏览器补查](docs/workspace-tools.md#网页检索和浏览器补查)
 
-## 模型配置
+## 启动和模型配置
 
-要管理模型列表，可以复制示例为 `models.json`，在 `chat.available` 和 `image.available` 填写你可用的模型 ID。两组的 `default` 可填各自列表中的一个 ID，也可保留为 `null`。通过 `--models-config` 加载，`--list-models` 可在没有 API Key 时查看。[models.example.json](models.example.json)
+CLI 和 Server 共用 `agent-cook.json`。源码安装时会从示例创建本地配置，独立 CLI 也可以复制同一个示例。文件容纳 OpenRouter、Exa 和 E2B 密钥、两套模型列表、沙箱以及服务和运行默认值。仓库提交的是留空的示例，本地 `agent-cook.json` 已被 Git 忽略。[agent-cook.example.json](agent-cook.example.json)
+
+可以用 `--config` 指定文件，否则按任务工作目录、启动目录和系统的 Agent Cook 配置目录查找。`--models-config` 仍可单独指定模型目录，原有环境变量仍能覆盖文件里的对应值。`./cook` 继续读取已有的 `.env`。安装包的引导仍可把 OpenRouter Key 保存到系统凭据存储。
 
 ```bash
-uv run --project agent agent-cook --models-config ./models.json --list-models
-uv run --project agent agent-cook --models-config ./models.json '用一句话介绍这个项目。'
+./cook --list-models
+./cook run --config ./agent-cook.json '用一句话介绍这个项目。'
 ```
 
 两类模型各自按以下优先级选择。
@@ -55,16 +57,21 @@ uv run --project agent agent-cook --models-config ./models.json '用一句话介
 | 1 | `--model` | `--image-model` |
 | 2 | 任务 JSON 的 `model` | 任务 JSON 的 `image_model` |
 | 3 | `OPENROUTER_MODEL` | `OPENROUTER_IMAGE_MODEL` |
-| 4 | 续接会话或 `/setup` 保存的模型 | 配置文件的 `image.default` |
-| 5 | 配置文件的 `chat.default` | |
+| 4 | 续接会话的模型 | 续接会话的生图模型 |
+| 5 | `agent-cook.json` 中的 `models.chat.default` | 模型目录的 `image.default` |
+| 6 | `/setup` 保存的模型或模型目录的 `chat.default` | |
 
 也可直接通过命令行、任务 JSON 或环境变量指定 OpenRouter 模型 ID。运行任务需要选择对话模型。在带沙箱的运行中选定生图模型后，Agent 可调用 `generate_image`。两类模型复用同一个 API Key。[生图用法](docs/workspace-tools.md#生图)
+
+对话模型可使用 Chat Completions 或 Responses。按顺序读取 `--model-api`、任务 JSON 的 `model_api`、`OPENROUTER_MODEL_API`、`agent-cook.json` 的 `model_api`，然后查模型目录的 `chat_apis`。模型目录可为不同模型指定协议，例如 `"chat_apis": {"deepseek/deepseek-v4.1-flash-1017": "responses"}`。默认使用 `chat_completions`。
+
+Responses 请求由本地 Session 提供上下文，工具结果按 `call_id` 回传。OpenRouter 的 Responses 接口采用无状态请求。 [OpenRouter 接口文档](https://openrouter.ai/docs/api_reference/responses/overview)
 
 ## 执行与上下文
 
 公共执行提示词指导 Agent 按用户目标完成脚本、文件和工具操作，按需读取 Skill，验证并交付结果。工作区 Run 以主 Agent 的 `submit_results` 回执交付文件。Runtime 会核对已提交文件的内容，文件变更后需要提交当前版本才可完成。[公共执行提示词](agent/src/agent_cook/context/execution_prompt.md)
 
-上下文默认按 32,768 tokens 的窗口计算。用 `--context-window` 填入实际模型窗口，或在 Python 入口传入 `AgentSpec.context_policy`。预扣输出及误差余量后，估算输入达到预算的 80% 时，Runtime 会在完整工具轮次之间尝试压缩。首次请求和压缩后重估整份输入，其余轮次以上一次模型返回的 `usage.prompt_tokens` 加新增消息的估算量为准。
+上下文默认按 32,768 tokens 的窗口计算。用 `--context-window` 填入实际模型窗口，或在 Python 入口传入 `AgentSpec.context_policy`。预扣输出及误差余量后，估算输入达到预算的 80% 时，Runtime 会在完整工具轮次之间尝试压缩。首次请求和压缩后重估整份输入，其余轮次以上一次模型返回的输入 token 数加新增消息的估算量为准。
 
 压缩把已完成的旧轮次写成六段 Markdown checkpoint，继续使用同一工作区。模型保留任务原文和最近的完整调用与回执。单个轮次超出输入预算时也可压缩。成功的 checkpoint 及压缩前后的输入估算记录在 `context.compacted` 事件中。[上下文默认配置](agent/src/agent_cook/context/policy.py)
 
@@ -79,7 +86,7 @@ uv run --project agent agent-cook --models-config ./models.json '用一句话介
 | `server/` | HTTP API、持久化任务队列和 SSE。 |
 | `core/` | `run.py` 管 Run 的预算、结束状态和任务资源。`loop.py` 推进模型和工具轮次。 |
 | `context/` | 管理执行提示词、输入预算、上下文组装和 checkpoint 压缩。 |
-| `model/` | `client.py` 定义模型接口。`openrouter.py` 负责 Chat Completions 的消息和工具调用格式。 |
+| `model/` | `client.py` 定义模型接口。`openrouter.py` 和 `openrouter_responses.py` 适配 OpenRouter 的两种对话协议。 |
 | `tools/` | `spec.py` 和 `registry.py` 管工具契约、授权和分派。`workspace.py` 注册工作区工具，`images.py` 接入生图，`artifacts.py` 导出交付文件。 |
 | `extensions/` | 加载插件清单、Skill 包、子 Agent 定义、工具 Hook 和 MCP 配置。 |
 | `sandbox/` | `interface.py` 定义任务环境接口。`docker.py` 和 `e2b.py` 管各自的生命周期和传输。`worker/` 在沙箱内执行共用操作。 |

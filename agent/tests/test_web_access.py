@@ -118,6 +118,113 @@ class OpenRouterWebTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(turn.web_sources, ({"url": _PAGE, "title": "Pricing"},))
 
 
+class ExaWebTest(unittest.TestCase):
+    def test_cli_calls_exa_mcp_and_returns_sources_to_the_model(self):
+        import httpx
+
+        mcp_calls = []
+
+        def mcp_endpoint(request):
+            self.assertEqual(request.url.host, "mcp.exa.ai")
+            self.assertEqual(request.url.params["defaultSearchType"], "lite")
+            self.assertEqual(request.url.params["tools"], "web_search_exa,web_fetch_exa")
+            self.assertEqual(request.headers["x-api-key"], "fixture-exa-key")
+            message = json.loads(request.content)
+            if message["method"] == "initialize":
+                result = {
+                    "protocolVersion": message["params"]["protocolVersion"],
+                    "capabilities": {"tools": {}}, "serverInfo": {"name": "exa", "version": "1"},
+                }
+            elif message["method"] == "tools/list":
+                result = {"tools": [
+                    {"name": name, "inputSchema": {"type": "object"}} for name in ("web_search_exa", "web_fetch_exa")
+                ]}
+            elif message["method"] == "tools/call":
+                mcp_calls.append(message["params"])
+                if message["params"]["name"] == "web_search_exa":
+                    result = {"content": [], "structuredContent": {"sources": [{"url": _PAGE, "title": "Pricing"}]}}
+                else:
+                    result = {"content": [{"type": "text", "text": "Page text from Exa."}]}
+            else:
+                self.assertEqual(message["method"], "notifications/initialized")
+                return httpx.Response(202)
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": message["id"], "result": result})
+
+        def requested_tool(name, **arguments):
+            function = SimpleNamespace(name=name, arguments=json.dumps(arguments))
+            return response(
+                calls=[SimpleNamespace(id=name, type="function", function=function)], finish_reason="tool_calls",
+            )
+
+        create = AsyncMock(side_effect=[
+            requested_tool("web_search", query="Pricing"), requested_tool("web_fetch", url=_PAGE), response("Verified."),
+        ])
+
+        @asynccontextmanager
+        async def open_client(**_):
+            yield sdk_client(create)
+
+        http_client = httpx.AsyncClient
+        with (
+            TemporaryDirectory() as directory,
+            patch.dict(os.environ, {"OPENROUTER_API_KEY": "fixture-key", "OPENROUTER_MODEL": "fixture/model"}, clear=True),
+            patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}),
+            patch("httpx.AsyncClient", side_effect=lambda **kwargs: http_client(
+                transport=httpx.MockTransport(mcp_endpoint), **kwargs,
+            )),
+            redirect_stdout(io.StringIO()),
+            redirect_stderr(io.StringIO()),
+        ):
+            root = Path(directory)
+            (root / "agent-cook.json").write_text(json.dumps({"api_keys": {"exa": "fixture-exa-key"}}), encoding="utf-8")
+            self.assertEqual(main(["exec", "-C", directory, "Look up pricing."]), 0)
+
+        first, second, third = (attempt.kwargs for attempt in create.await_args_list)
+        self.assertEqual([item["function"]["name"] for item in first["tools"]], ["web_search", "web_fetch"])
+        self.assertIn(_PAGE, second["messages"][-1]["content"])
+        self.assertEqual(third["messages"][-1]["content"], "Page text from Exa.")
+        self.assertNotIn("fixture-exa-key", json.dumps(third))
+        self.assertEqual(mcp_calls, [
+            {"name": "web_search_exa", "arguments": {"query": "Pricing", "numResults": 5}},
+            {"name": "web_fetch_exa", "arguments": {"urls": [_PAGE], "maxCharacters": 4000}},
+        ])
+
+    def test_web_settings_choose_one_backend_without_contacting_exa_for_other_tasks(self):
+        cases = (
+            ("fixture-exa-key", None, ["function", "function"]),
+            ("fixture-exa-key", True, ["function", "function"]),
+            ("fixture-exa-key", False, []),
+            ("", True, ["openrouter:web_search", "openrouter:web_fetch"]),
+            ("", None, []),
+        )
+        for key, enabled, expected in cases:
+            with self.subTest(exa_configured=bool(key), enabled=enabled), TemporaryDirectory() as directory:
+                create = AsyncMock(return_value=response("Done."))
+
+                @asynccontextmanager
+                async def open_client(**_):
+                    yield sdk_client(create)
+
+                request = {"task": "Say hello."}
+                if enabled is not None:
+                    request["web"] = {"enabled": enabled}
+                (Path(directory) / "request.json").write_text(json.dumps(request), encoding="utf-8")
+                with (
+                    patch.dict(os.environ, {
+                        "OPENROUTER_API_KEY": "fixture-key", "OPENROUTER_MODEL": "fixture/model", "EXA_API_KEY": key,
+                    }, clear=True),
+                    patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}),
+                    patch("agent_cook.tools.web.call_mcp_tool", new_callable=AsyncMock) as mcp,
+                    redirect_stdout(io.StringIO()),
+                    redirect_stderr(io.StringIO()),
+                ):
+                    self.assertEqual(main(["exec", "-C", directory, "--request", "request.json"]), 0)
+                mcp.assert_not_awaited()
+                request_sent = create.await_args.kwargs
+                tools = request_sent.get("tools", request_sent.get("extra_body", {}).get("tools", []))
+                self.assertEqual([item["type"] for item in tools], expected)
+
+
 class BrowserProxyTest(unittest.TestCase):
     def test_proxy_relays_traffic_to_the_approved_address(self):
         upstream, site = socket.socketpair()
