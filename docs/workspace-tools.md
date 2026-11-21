@@ -84,7 +84,7 @@ uv run --project agent agent-cook --skills-dir /path/to/skills \
 
 ## 生图
 
-使用沙箱时，可用 `--image-model` 或任务 JSON 的 `image_model` 选择生图模型并启用 `generate_image`。也可通过 `OPENROUTER_IMAGE_MODEL` 或模型列表中的 `image.default` 配置默认生图模型。选择支持 OpenRouter Image API 的模型。对话和生图复用 `OPENROUTER_API_KEY`，由主进程分别调用对应接口。[模型配置](../README.md#模型配置) · [OpenRouter Image API](https://openrouter.ai/blog/tutorials/image-generation/)
+使用沙箱时，可用 `--image-model` 或任务 JSON 的 `image_model` 选择生图模型并启用 `generate_image`。也可通过 `OPENROUTER_IMAGE_MODEL` 或模型列表中的 `image.default` 配置默认生图模型。选择支持 OpenRouter Image API 的模型。对话和生图复用 `OPENROUTER_API_KEY`，由主进程分别调用对应接口。[模型配置](install.md#模型配置) · [OpenRouter Image API](https://openrouter.ai/blog/tutorials/image-generation/)
 
 | 工具参数 | 用法 |
 |---|---|

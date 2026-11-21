@@ -11,7 +11,7 @@
 
 ## 运行
 
-在仓库根目录配置 OpenRouter 后，用 `./cook demo` 在本地原生沙箱运行样例。[本地运行](../README.md#从源码运行)
+在仓库根目录配置 OpenRouter 后，用 `./cook demo` 在本地原生沙箱运行样例。[安装与启动](../README.md#安装与启动)
 
 ```bash
 ./cook demo

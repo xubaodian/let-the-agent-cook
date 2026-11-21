@@ -13,7 +13,7 @@
 }
 ```
 
-文件里的相对目录从请求文件的目录解析。用 `--request run.json` 读取任务，通过 `--sandbox` 和 `--input` 配置沙箱与输入文件。任务可用 `model` 选择对话模型，用 `image_model` 选择生图模型。命令行参数可以覆盖两项选择。[模型配置](../README.md#模型配置)
+文件里的相对目录从请求文件的目录解析。用 `--request run.json` 读取任务，通过 `--sandbox` 和 `--input` 配置沙箱与输入文件。任务可用 `model` 选择对话模型，用 `image_model` 选择生图模型。命令行参数可以覆盖两项选择。[模型配置](install.md#模型配置)
 
 ```bash
 uv run --project agent agent-cook --sandbox docker --request run.json
