@@ -78,10 +78,11 @@ class NativeDeliveryTest(unittest.TestCase):
         from openpyxl import load_workbook
         from pptx import Presentation
 
+        page = """<title>Sales</title><button onclick="this.textContent='Checked'">Run</button>"""
         node = (
             "const fs = require('node:fs');"
             "fs.writeFileSync('label.txt', 'Sales workbook');"
-            "fs.writeFileSync('index.html', '<title>Sales</title><button onclick=\"this.textContent=\'Checked\'\">Run</button>');"
+            f"fs.writeFileSync('index.html', {json.dumps(page)});"
         )
         excel = _SALES.removesuffix(".csv") + ".xlsx"
         deck = _SALES.removesuffix(".csv") + ".pptx"

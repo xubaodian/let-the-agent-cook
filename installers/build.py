@@ -220,9 +220,22 @@ def linux(payload: Path, output: Path, work: Path) -> None:
     (base / "DEBIAN/control").write_text(
         f"Package: agent-cook\nVersion: {VERSION}\nArchitecture: amd64\n"
         "Maintainer: Let the Agent Cook <22562011+xubaodian@users.noreply.github.com>\n"
-        "Depends: libc6 (>= 2.39), bubblewrap\nRecommends: gnome-keyring, xdg-utils\n"
+        "Depends: libc6 (>= 2.39), bubblewrap, apparmor-profiles\nRecommends: gnome-keyring, xdg-utils\n"
         "Description: Agent Cook command line application\n", encoding="utf-8",
     )
+    postinst = base / "DEBIAN/postinst"
+    postinst.write_text(
+        '#!/bin/sh\nset -eu\n'
+        'extra=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict\n'
+        'profile=/etc/apparmor.d/bwrap-userns-restrict\n'
+        'if [ "$1" = configure ] && [ -r "$extra" ] && [ -r /sys/kernel/security/apparmor/profiles ] '
+        '&& ! grep -q "^bwrap (" /sys/kernel/security/apparmor/profiles '
+        '&& [ ! -e "$profile" ] && [ ! -L "$profile" ]; then\n'
+        '    install -m 0644 "$extra" "$profile"\n'
+        '    apparmor_parser -a "$profile"\n'
+        'fi\n', encoding="utf-8",
+    )
+    postinst.chmod(0o755)
     call("dpkg-deb", "--root-owner-group", "--build", base, output / "AgentCook-ubuntu-amd64.deb")
 
 

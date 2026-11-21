@@ -45,7 +45,7 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...]) -> list[str]
     services = " ".join(f'(global-name "{service}")' for service in _MAC_SERVICES)
     writable = f"(subpath {json.dumps(str(root), ensure_ascii=False)})"
     profile = f"""(version 1)
-(deny default)
+(deny default (with message "agent-cook isolation"))
 (allow process-fork)
 (allow process-exec)
 (allow signal (target same-sandbox))

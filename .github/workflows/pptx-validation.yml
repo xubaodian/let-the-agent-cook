@@ -35,7 +35,12 @@ jobs:
         if: steps.credential.outputs.ready == 'true'
       - name: Install Bubblewrap
         if: steps.credential.outputs.ready == 'true'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap apparmor-profiles
+          if ! /usr/bin/bwrap --unshare-user --unshare-net --disable-userns --ro-bind / / /usr/bin/true; then
+            sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          fi
       - name: Generate and verify three PowerPoint decks
         if: steps.credential.outputs.ready == 'true'
         env:
