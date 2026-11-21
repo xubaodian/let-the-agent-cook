@@ -568,6 +568,10 @@ def main(argv: list[str] | None = None) -> int:
             if not stream.isatty() and (configure := getattr(stream, "reconfigure", None)):
                 configure(encoding="utf-8")
     words = list(sys.argv[1:] if argv is None else argv)
+    if sys.platform == "win32" and words[:1] == ["__chromium_appcontainer"]:
+        from agent_cook.sandbox.native.windows import chromium_process
+
+        return chromium_process(words[1:])
     mode = words.pop(0) if words and words[0] in ("exec", "resume", "doctor", "docker", "serve") else "local"
     parser = _parser(mode)
     args = parser.parse_args(words)

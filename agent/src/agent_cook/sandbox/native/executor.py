@@ -39,9 +39,13 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...]) -> list[str]
     executable = Path("/usr/bin/sandbox-exec")
     if not executable.is_file():
         raise SandboxError("This macOS installation does not provide the Seatbelt process launcher.")
-    system = ("/usr", "/bin", "/System", "/Library/Apple/System/Library", "/private/var/db/dyld")
+    system = ("/usr", "/bin", "/System", "/Library/Apple/System/Library", "/private/var/db/dyld",
+              "/private/var/db/timezone")
     readable = " ".join(f"(subpath {json.dumps(str(p), ensure_ascii=False)})" for p in (*system, *reads, root))
     devices = ' '.join(f'(literal "/dev/{name}")' for name in ("null", "zero", "random", "urandom"))
+    mime = ' '.join(f'(literal "/private/etc/{name}mime.types")' for name in (
+        "", "apache/", "apache2/", "httpd/", "httpd/conf/",
+    ))
     services = " ".join(f'(global-name "{service}")' for service in _MAC_SERVICES)
     writable = f"(subpath {json.dumps(str(root), ensure_ascii=False)})"
     profile = f"""(version 1)
@@ -54,7 +58,7 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...]) -> list[str]
 (allow sysctl-write (sysctl-name "kern.grade_cputype"))
 (allow file-read-metadata)
 (allow file-read-data (literal "/"))
-(allow file-read* {readable} {devices})
+(allow file-read* {readable} {devices} {mime})
 (allow file-map-executable {readable})
 (allow file-write* {writable} (literal "/dev/null") (literal "/dev/zero"))
 (allow mach-lookup {services})
@@ -138,12 +142,16 @@ async def _posix(
 async def execute(
     argv: list[str], *, root: Path, cwd: Path, reads: tuple[Path, ...],
     env: dict[str, str], timeout: float, payload: bytes | None = None, maximum: int = MAX_COMMAND_OUTPUT,
+    browser_controller: bool = False,
 ) -> CommandResult:
     if sys.platform == "win32":
         from agent_cook.sandbox.native.windows import run
 
         stop = Event()
-        pending = asyncio.create_task(asyncio.to_thread(run, argv, root, cwd, reads, env, timeout, maximum, payload, stop))
+        pending = asyncio.create_task(asyncio.to_thread(
+            run, argv, root, cwd, reads, env, timeout, maximum, payload, stop,
+            app_container=not browser_controller,
+        ))
         try:
             return await asyncio.shield(pending)
         except asyncio.CancelledError:

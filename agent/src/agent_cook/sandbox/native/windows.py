@@ -4,6 +4,7 @@ import ctypes as ct
 import msvcrt
 import os
 import subprocess
+import sys
 from contextlib import ExitStack, contextmanager
 from ctypes import wintypes as w
 from pathlib import Path
@@ -146,11 +147,13 @@ def _profile(root: Path, reads: tuple[Path, ...]):
 
 
 @contextmanager
-def _startup(sid, handles):
-    # Pass exactly the three standard handles. No credential or job handles are inherited.
-    capabilities = _SecurityCapabilities(sid, None, 0, 0)
+def _startup(sid, standard, inherited):
+    # Only standard handles and the two private Chromium control pipes can be inherited.
+    handles = (*standard, *inherited)
     handle_list = (w.HANDLE * len(handles))(*handles)
-    attributes = ((0x00020009, capabilities), (0x00020002, handle_list))
+    attributes = [(0x00020002, handle_list)]
+    if sid is not None:
+        attributes.append((0x00020009, _SecurityCapabilities(sid, None, 0, 0)))
     size = _SIZE()
     _init_attrs(None, len(attributes), 0, ct.byref(size))
     storage = ct.create_string_buffer(size.value)
@@ -162,7 +165,7 @@ def _startup(sid, handles):
         startup = _StartupEx()
         startup.startup.cb = ct.sizeof(startup)
         startup.startup.flags = 0x100
-        startup.startup.stdin, startup.startup.stdout, startup.startup.stderr = handles
+        startup.startup.stdin, startup.startup.stdout, startup.startup.stderr = standard
         startup.attributes = ct.cast(storage, _PTR)
         yield startup
     finally:
@@ -212,8 +215,10 @@ def _stop_job(job) -> None:
 def run(
     argv: list[str], root: Path, cwd: Path, reads: tuple[Path, ...], env: dict[str, str],
     timeout: float, maximum: int, payload: bytes | None, stop: Event,
+    *, app_container: bool = True, inherited: tuple[int, ...] = (),
 ) -> CommandResult:
-    with _profile(root, reads) as sid, ExitStack() as stack:
+    with ExitStack() as stack:
+        sid = stack.enter_context(_profile(root, reads)) if app_container else None
         source = stack.enter_context(TemporaryFile("w+b"))
         if payload:
             source.write(payload)
@@ -221,14 +226,14 @@ def run(
         stdout, write_out = _pipe(stack)
         stderr, write_err = _pipe(stack)
         handles = tuple(msvcrt.get_osfhandle(file.fileno()) for file in (source, write_out, write_err))
-        for handle in handles:
+        for handle in (*handles, *inherited):
             os.set_handle_inheritable(handle, True)
         job = _job()
         stack.callback(_close, job)
         process = _Process()
         command = ct.create_unicode_buffer(subprocess.list2cmdline(argv))
         variables = ct.create_unicode_buffer("\0".join(f"{k}={v}" for k, v in sorted(env.items(), key=lambda x: x[0].upper())) + "\0")
-        with _startup(sid, handles) as startup:
+        with _startup(sid, handles, inherited) as startup:
             flags = 0x00000004 | 0x00000400 | 0x00080000 | 0x08000000
             _check(_create_process(argv[0], command, None, None, True, flags, variables, str(cwd),
                                    ct.byref(startup), ct.byref(process)), "process creation")
@@ -267,3 +272,32 @@ def run(
             code.value, buffers[0].decode("utf-8", errors="replace"), buffers[1].decode("utf-8", errors="replace"),
             timed_out, truncated,
         )
+
+
+def chromium_process(arguments: list[str]) -> int:
+    from agent_cook.sandbox.native.executor import environment
+
+    try:
+        directory, binary = arguments
+        scratch = Path(directory).resolve(strict=True)
+        executable = Path(binary).resolve(strict=True)
+        if executable.name.lower() != "chrome-headless-shell.exe":
+            raise ValueError("Expected the managed Chromium headless executable.")
+        control = (msvcrt.get_osfhandle(3), msvcrt.get_osfhandle(4))
+        profile = scratch / "chromium-profile"
+        command = [
+            str(executable), "--headless", "--no-sandbox", "--single-process", "--disable-gpu",
+            "--disable-background-networking", "--disable-component-update", "--no-first-run",
+            "--no-startup-window", "--remote-debugging-pipe",
+            f"--remote-debugging-io-pipes={control[0]},{control[1]}", f"--user-data-dir={profile}",
+        ]
+        result = run(
+            command, scratch, scratch, (executable.parent,), environment(scratch, (executable.parent,)),
+            65, 8192, None, Event(), inherited=control,
+        )
+    except (OSError, ValueError, SandboxError) as error:
+        print(error, file=sys.stderr)
+        return 1
+    if result.stderr:
+        print(result.stderr, file=sys.stderr)
+    return 1 if result.timed_out else result.exit_code

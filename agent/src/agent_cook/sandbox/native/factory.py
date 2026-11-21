@@ -117,10 +117,20 @@ class NativeSandbox:
         program = DATA / "native/preview.py"
         env = environment(self.scratch, (python.parent,))
         env["PLAYWRIGHT_BROWSERS_PATH"] = str(chromium)
+        windows = sys.platform == "win32"
+        if windows:
+            # The controller launches the browser through the AppContainer helper.
+            launcher = [sys.executable]
+            if getattr(sys, "frozen", False):
+                env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+            else:
+                launcher.extend(("-I", "-m", "agent_cook"))
+            arguments["windows_launcher"] = launcher
+            arguments["windows_scratch"] = str(self.scratch)
         result = await execute(
             [str(python), "-I", str(program)], root=self.root, cwd=self.workspace.root,
             reads=(*reads, chromium, program.parent), env=env, timeout=timeout, maximum=64 * 1024,
-            payload=json.dumps(arguments).encode(),
+            payload=json.dumps(arguments, ensure_ascii=False).encode(), browser_controller=windows,
         )
         if result.timed_out or result.exit_code:
             output = result.stderr.strip()

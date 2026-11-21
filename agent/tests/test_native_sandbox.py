@@ -104,10 +104,11 @@ class NativeDeliveryTest(unittest.TestCase):
         runs = self.root / ".agent-cook/runs"
         trace, = runs.glob("*.jsonl")
         events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
-        for event in events:
-            if event["type"] == "tool.finished":
-                call_id = event["data"]["tool_call_id"]
-                self.assertFalse(event["data"]["is_error"], f"{call_id}: {self.observations.get(call_id)}")
+        failed = [
+            event["data"]["tool_call_id"] for event in events
+            if event["type"] == "tool.finished" and event["data"]["is_error"]
+        ]
+        self.assertFalse(failed, "\n".join(f"{call_id}: {self.observations.get(call_id)}" for call_id in failed))
         self.assertEqual(events[-1]["type"], "run.completed", events[-1])
         results, = runs.glob("*-results")
         open_results.assert_called_once_with(results)

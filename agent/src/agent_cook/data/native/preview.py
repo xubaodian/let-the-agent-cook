@@ -2,6 +2,7 @@
 
 import json
 import mimetypes
+import os
 import sys
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, unquote, urlsplit
@@ -12,10 +13,32 @@ _ORIGIN = "http://agent-cook-workspace.invalid"
 _LIMIT = 16 * 1024 * 1024
 
 
+def open_browser(playwright, request):
+    if "windows_launcher" not in request:
+        return playwright.chromium.launch()
+    from playwright._impl._driver import compute_driver_executable
+
+    # The driver creates its pipes on the host. The launcher binds the same pipes
+    # to headless Chromium inside an AppContainer, without opening a CDP port.
+    _, cli = compute_driver_executable()
+    with (Path(cli).parent / "browsers.json").open(encoding="utf-8") as file:
+        browsers = json.load(file)["browsers"]
+    revision = next(browser["revision"] for browser in browsers if browser["name"] == "chromium-headless-shell")
+    executable = next((Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"]) / f"chromium_headless_shell-{revision}").glob(
+        "*/chrome-headless-shell.exe",
+    ))
+    launcher, *arguments = request["windows_launcher"]
+    return playwright.chromium.launch(
+        executable_path=launcher, ignore_default_args=True, args=[
+            *arguments, "__chromium_appcontainer", request["windows_scratch"], str(executable),
+        ],
+    )
+
+
 def preview(request: dict) -> dict:
     workspace = Path.cwd().resolve()
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = open_browser(playwright, request)
         context = browser.new_context(service_workers="block", accept_downloads=False)
 
         def asset(route):
@@ -39,6 +62,13 @@ def preview(request: dict) -> dict:
         context.route("**/*", asset)
         context.route_web_socket("**/*", lambda socket: socket.close())
         page = context.new_page()
+        errors = []
+
+        def record_error(error):
+            if len(errors) < 10:
+                errors.append(str(error)[:512])
+
+        page.on("pageerror", record_error)
         page.goto(f"{_ORIGIN}/{quote(request['path'])}", wait_until="domcontentloaded", timeout=8000)
         for action in request.get("actions") or ():
             target = page.locator(action["selector"])
@@ -61,10 +91,10 @@ def preview(request: dict) -> dict:
             page.screenshot(path=destination)
         return {
             "url": page.url, "title": page.title(), "text": page.locator("body").inner_text()[:12000],
-            "page_errors": [], "screenshot": shot,
+            "page_errors": errors, "screenshot": shot,
         }
 
 
 if __name__ == "__main__":
-    request = json.loads(sys.stdin.buffer.read(64 * 1024))
+    request = json.load(sys.stdin.buffer)
     sys.stdout.buffer.write(json.dumps(preview(request), ensure_ascii=False).encode("utf-8"))
