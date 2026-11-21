@@ -53,6 +53,20 @@ sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 
 用 `--config /path/to/agent-cook.json` 显式使用另一份配置。原有环境变量仍可覆盖配置，其来源会在 `/config` 和 `/key` 中显示。已有 OpenRouter 系统凭据和旧版 `settings.json` 仍可读取。手动编辑后重启即可加载更改。
 
+### 模型配置
+
+`models.chat` 和 `models.image` 分别配置对话模型和生图模型。每组用 `default` 指定默认模型，用 `available` 列出候选模型。`--models-config` 可以单独指定模型目录。 [模型目录示例](../models.example.json)
+
+单次任务按命令行参数、任务 JSON、环境变量、已保存的会话模型、默认模型的顺序选择模型。
+
+| 配置位置 | 对话模型 | 生图模型 |
+| --- | --- | --- |
+| 命令行 | `--model` | `--image-model` |
+| 任务 JSON | `model` | `image_model` |
+| 环境变量 | `OPENROUTER_MODEL` | `OPENROUTER_IMAGE_MODEL` |
+
+对话默认使用 Chat Completions。要启用 Responses，可传入 `--model-api responses`、在任务或用户配置中设置 `model_api`，或设置 `OPENROUTER_MODEL_API`。用模型目录的 `chat_apis` 为指定模型设置协议。 [OpenRouter Responses](https://openrouter.ai/docs/api_reference/responses/overview)
+
 ## 构建和发布
 
 PR 的 [Actions](https://github.com/xubaodian/let-the-agent-cook/actions) 构建三端安装包，在对应的托管 runner 安装，验证入口及 Python、Node.js、Chromium。部署方可用仓库变量 `AGENT_COOK_MODELS_JSON` 以 [models.example.json](../models.example.json) 的格式向安装包提供公开候选模型。也可在本地打包时传 `--models models.json`。
