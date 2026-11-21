@@ -95,8 +95,8 @@ class CliTest(unittest.TestCase):
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
-                status = main(["Say hello", "--trace", str(trace)])
-                duplicate_status = main(["Try again", "--trace", str(trace)])
+                status = main(["--sandbox", "none", "Say hello", "--trace", str(trace)])
+                duplicate_status = main(["--sandbox", "none", "Try again", "--trace", str(trace)])
             raw_trace = trace.read_text(encoding="utf-8")
             events = [json.loads(line) for line in raw_trace.splitlines()]
 

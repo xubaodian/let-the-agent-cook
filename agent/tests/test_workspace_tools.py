@@ -298,13 +298,12 @@ class WorkspaceCliTest(unittest.TestCase):
             with (
                 patch.dict(os.environ, env),
                 patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=open_client)}),
-                patch("agent_cook.cli.DockerSandboxFactory", return_value=factory),
-                patch("agent_cook.cli.prepare_docker"),
+                patch("agent_cook.cli.NativeSandboxFactory", return_value=factory),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
                 status = main([
-                    "--sandbox", "docker", "--input", str(source), "--trace", str(trace),
+                    "--sandbox", "native", "--input", str(source), "--trace", str(trace),
                     "Export the input",
                 ])
             event = next(

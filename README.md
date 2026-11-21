@@ -16,21 +16,21 @@
 ./cook run '用一句话介绍这个项目。'
 ```
 
-`./cook doctor` 检查依赖、模型配置和已选沙箱。也可以在仓库根目录用 `uv tool install --python 3.12 ./agent` 安装独立 CLI，然后从任意目录运行 `agent-cook`。通过 `-C` 指定工作目录和相对路径的基准。
+`./cook doctor` 检查依赖、模型配置和已选沙箱。也可以在仓库根目录用 `uv tool install --python 3.12 './agent[examples]'` 安装独立 CLI，然后从任意目录运行 `agent-cook`。通过 `-C` 指定工作目录和相对路径的基准。
 
 | 命令 | 用法 |
 |---|---|
 | `agent-cook` | 启动交互终端。可用 `@路径` 选择文件或文件夹，`/model` 选模型，`/sandbox` 选工作区，`/help` 查看命令。 |
 | `agent-cook exec "任务"` | 单次执行。用 `--input` 可重复选择文件或文件夹，用 `exec -` 从 stdin 读取任务。 |
 | `agent-cook resume --last` | 继续当前工作目录最近的会话，也可以用记录中的会话 ID。 |
-| `agent-cook docker` | 检查或启动本机 Docker，准备当前工作区镜像。 |
+| `agent-cook docker` | 为服务端 Docker 后端准备任务镜像。 |
 | `agent-cook serve` | 启动常驻 HTTP API。[服务端使用方式](docs/server.md) |
 
 交互时按 `Ctrl+C` 取消当前 Run。成功的 Run 保存对话、输入快照和最新交付的文件，续接时将它们重新放入工作区。用 `/new` 另开会话。已存在的 `agent-cook "任务"` 也是单次入口。
 
 `exec` 默认把最终答复放在 stdout。用 `--json` 时 stdout 输出 JSONL 事件。执行记录和结果目录的绝对路径打印到 stderr，默认保存在工作目录的 `.agent-cook/runs/`。
 
-文本任务可直接运行。第一次用本机 Docker 处理文件时，CLI 自动准备镜像，也可用 `/docker` 提前准备。无附件的生成任务可用 `--sandbox docker`，也可用 `--sandbox e2b` 或 `AGENT_COOK_SANDBOX` 切换工作区。用 `./cook demo` 运行生成 HTML 和截图的快速示例。[工作区工具与沙箱](docs/workspace-tools.md)
+本地 CLI 默认在系统原生沙箱里执行脚本和浏览器。文件任务在独立工作区中处理副本，纯对话按需打开工作区。`--sandbox none` 可关闭本地工作区。用 `./cook demo` 运行生成 HTML 和截图的快速示例。[工作区工具与沙箱](docs/workspace-tools.md)
 
 使用沙箱时，可以用 `--skills-dir` 配置本机 Skill。模型先接收名称、描述和工作区入口，可用 `ls` 和 `read_file` 按需浏览和读取。[按需读取 Skill](docs/workspace-tools.md#按需读取-skill)
 
@@ -38,7 +38,7 @@
 
 仓库提供 9 个 Skill 和 `reporting-studio`、`web-studio` 两个示例插件，可以运行经营复盘、活动报名站和双插件交付任务。[示例和运行命令](examples/README.md)
 
-配置 `api_keys.exa` 或 `EXA_API_KEY` 后自动获得 Exa 网页搜索和正文抓取。任务可用 `web.browser_origins` 为 Playwright 指定公网来源。[网页检索和浏览器补查](docs/workspace-tools.md#网页检索和浏览器补查)
+配置 `api_keys.exa` 或 `EXA_API_KEY` 后自动获得 Exa 网页搜索和正文抓取。服务端任务可用 `web.browser_origins` 为 Playwright 指定公网来源。[网页检索和浏览器补查](docs/workspace-tools.md#网页检索和浏览器补查)
 
 ## 启动和模型配置
 
@@ -90,7 +90,7 @@ Responses 请求由本地 Session 提供上下文，工具结果按 `call_id` �
 | `model/` | `client.py` 定义模型接口。`openrouter.py` 和 `openrouter_responses.py` 适配 OpenRouter 的两种对话协议。 |
 | `tools/` | `spec.py` 和 `registry.py` 管工具契约、授权和分派。`workspace.py` 注册工作区工具，`images.py` 接入生图，`artifacts.py` 导出交付文件。 |
 | `extensions/` | 加载插件清单、Skill 包、子 Agent 定义、工具 Hook 和 MCP 配置。 |
-| `sandbox/` | `interface.py` 定义任务环境接口。`docker.py` 和 `e2b.py` 管各自的生命周期和传输。`worker/` 在沙箱内执行共用操作。 |
+| `sandbox/` | `interface.py` 定义任务环境接口。`native/` 提供本地系统隔离。`docker.py` 和 `e2b.py` 管服务端后端的生命周期和传输。`worker/` 提供共用工作区操作。 |
 | `state/` | 管理消息、checkpoint 和本地交互会话的输入与产物快照。 |
 | `protocol/` | 定义任务入口、RunEvent、ArtifactRef 和 UiAttachment，供宿主接入和回放读取。 |
 | `events/` | 为执行事件编号并写入 JSONL。 |
@@ -110,4 +110,4 @@ Responses 请求由本地 Session 提供上下文，工具结果按 `call_id` �
 uv run --project agent --locked --all-extras python -m unittest discover -s agent/tests -v
 ```
 
-回归使用测试模型验证文件、命令和产物交付。CI 还会用真实 Docker 容器跑文件夹任务和产物交付。[首发验收](docs/install.md#首发验收)
+CI 在 Windows x64、macOS arm64 和 Ubuntu x64 实测本地脚本、浏览器、隔离和交付，并为 Docker 服务端后端单独运行回归。[首发验收](docs/install.md#首发验收)

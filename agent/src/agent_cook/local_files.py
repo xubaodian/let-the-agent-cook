@@ -6,25 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 from agent_cook.sandbox.limits import MAX_FILE_BYTES, MAX_SCAN_ENTRIES, MAX_TRANSFER_BYTES
-from agent_cook.sandbox.paths import workspace_path
-
-_DEVICES = {
-    "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
-    *(f"{prefix}{digit}" for prefix in ("COM", "LPT") for digit in "123456789¹²³"),
-}
-
-
-def portable_path(value: str, *, allow_root: bool = False) -> str:
-    path = workspace_path(value, allow_root=allow_root)
-    for part in PurePosixPath(path).parts:
-        if (
-            part.endswith((" ", "."))
-            or part.split(".", 1)[0].rstrip(" ").upper() in _DEVICES
-            or any(char in '<>:"|?*' for char in part)
-            or len(part.encode("utf-8")) > 255
-        ):
-            raise ValueError(f"Path '{value}' cannot be used on Windows, macOS and Linux.")
-    return path
+from agent_cook.sandbox.paths import is_link as _link, portable_path
 
 
 class PortablePaths:
@@ -44,12 +26,6 @@ class PortablePaths:
             previous = self._entries.setdefault(key, entry)
             if previous != entry:
                 raise ValueError(f"Workspace path '{path}' conflicts with '{previous[0]}'.")
-
-
-def _link(info: os.stat_result) -> bool:
-    return stat.S_ISLNK(info.st_mode) or bool(
-        getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
-    )
 
 
 class LocalTree:

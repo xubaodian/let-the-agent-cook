@@ -1,4 +1,4 @@
-"""Check an installed CLI and optionally run its sample through OpenRouter and Docker."""
+"""Check an installed CLI and optionally run its sample through OpenRouter."""
 
 import argparse
 import json
@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 
-def smoke(executable: Path, *, docker: bool = False, image: str | None = None) -> None:
+def smoke(executable: Path, *, files: bool = False) -> None:
     with TemporaryDirectory(prefix="agent-cook-installed-") as directory:
         config = Path(directory) / "agent-cook.json"
         config.write_text(json.dumps({
@@ -34,17 +34,21 @@ def smoke(executable: Path, *, docker: bool = False, image: str | None = None) -
         sales = list(Path(directory).glob(".agent-cook/examples/*/资料 样例/表格/销售 数据.csv"))
         if len(sales) != 1 or "Notebook" not in sales[0].read_text(encoding="utf-8"):
             raise ValueError(f"The installed CLI could not unpack the sample. {result.stderr}")
-        if docker:
-            verify_delivery(executable, Path(directory), sales[0], image)
+        doctor = subprocess.run(
+            [str(executable), "doctor", "--runtime", *command[1:]], cwd=directory, env=environment,
+            capture_output=True, encoding="utf-8", timeout=240,
+        )
+        if doctor.returncode or "OK  Native process isolation" not in doctor.stdout:
+            raise ValueError(f"The installed CLI could not run in native isolation.\n{doctor.stdout}{doctor.stderr}")
+        if files:
+            verify_delivery(executable, Path(directory), sales[0])
 
 
-def verify_delivery(executable: Path, directory: Path, sales: Path, image: str | None) -> None:
+def verify_delivery(executable: Path, directory: Path, sales: Path) -> None:
     selected = sales.parents[1]
     relative = sales.relative_to(selected.parent)
     original = sales.read_bytes()
     command = [str(executable), "exec", "-C", str(directory), "--input", str(selected)]
-    if image:
-        command.extend(("--docker-image", image))
     command.append(
         f"Read the copied {relative.as_posix()} and verify it contains Notebook. "
         "Replace the copy's contents with exactly 'Agent Cook acceptance OK' on one line. "
@@ -64,7 +68,6 @@ def verify_delivery(executable: Path, directory: Path, sales: Path, image: str |
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("executable", type=Path)
-    parser.add_argument("--docker", action="store_true", help="Use the configured OpenRouter account for a Docker task")
-    parser.add_argument("--docker-image", help="Test a locally built sandbox image")
+    parser.add_argument("--files", action="store_true", help="Use the configured OpenRouter account for a file task")
     args = parser.parse_args()
-    smoke(args.executable.resolve(strict=True), docker=args.docker, image=args.docker_image)
+    smoke(args.executable.resolve(strict=True), files=args.files)

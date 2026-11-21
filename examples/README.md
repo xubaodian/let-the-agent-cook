@@ -11,16 +11,22 @@
 
 ## 运行
 
-在仓库根目录配置 OpenRouter 后，用 `./cook demo` 构建工作区镜像并运行样例。[本地运行](../README.md#本地运行)
+在仓库根目录配置 OpenRouter 后，用 `./cook demo` 在本地原生沙箱运行样例。[本地运行](../README.md#从源码运行)
 
 ```bash
 ./cook demo
 ./cook demo shop-review
-./cook demo event-registration
 ./cook demo combined-review
 ```
 
-`fixture-data` 由执行入口自动启动。报名站和双插件的样例用宿主 `127.0.0.1:8766` 上的 `reference-library`，按需启动进程并在退出时收回。报名模拟接口随 Playwright 在任务沙箱内启动。
+`fixture-data` 由执行入口自动启动。双插件样例按需启动宿主 `127.0.0.1:8766` 上的 `reference-library`，并在退出时回收。
+
+报名站使用服务端 Docker 后端验证真实模拟接口。在服务端先用 `uv run --project agent --no-sync python plugins/web-studio/mcp/server.py` 启动示例 MCP，再启动下面的 API。把 `event-registration/run.json` 的 `task` 字段提交到 `POST /v1/runs`。Playwright 会在任务沙箱内启动报名模拟接口。 [HTTP 服务接口](../docs/server.md#api)
+
+```bash
+./cook docker
+./cook serve --sandbox docker --timeout 300 --max-turns 24 --request examples/event-registration/run.json
+```
 
 提交报告时，`reporting-studio` 根据 `out/report/validation.json` 核对交付文件和检查结果。提交站点时，`web-studio` 核对一张通过断言的截图和站点文件版本。页面、样式或数据更新后，重新预览即可生成新凭据。两个 Hook 均按提交路径生效。
 
@@ -44,7 +50,7 @@ AGENT_COOK_TEST_BROWSER=1 uv run --project agent --extra mcp --extra examples \
 
 三个主题分别为门店经营复盘（4 页）、博物馆展览提案（5 页）和 Agent Cook 上手指南（4 页）。验收通过 Responses 调用 DeepSeek V4.1 Flash 1017 或 Grok 4.7，再通过 Seedream 5.5 生成封面。脚本检查 PPT 能打开、标题顺序和页数符合要求、正文可编辑，以及提交的封面已嵌入第一页。
 
-在仓库根目录配置 OpenRouter 并构建 Docker 工作区后运行以下命令。输出目录下会保存通过检查的 PPT 和运行记录。GitHub Actions 中同名验收工作流可读取 `OPENROUTER_PPT_TEST_KEY` 仓库密钥。
+在仓库根目录配置 OpenRouter 并准备本地原生工作区后运行以下命令。输出目录下会保存通过检查的 PPT 和运行记录。GitHub Actions 中同名验收工作流可读取 `OPENROUTER_PPT_TEST_KEY` 仓库密钥。
 
 ```bash
 uv run --project agent --locked --extra examples python examples/pptx_validation.py --output ./pptx-validation

@@ -37,9 +37,9 @@ CASES = (
     ),
     Case(
         "agent-workspace", DEEPSEEK,
-        ("Agent Cook", "Select inputs", "Work in Docker", "Deliver results"),
+        ("Agent Cook", "Select inputs", "Work in isolation", "Deliver results"),
         "Write an English onboarding deck. Explain @ and --input for files and folders, the copied workspace "
-        "in local Docker, and submit_results selecting the final result directory. Use a diagram with editable "
+        "in a native OS sandbox, and submit_results selecting the final result directory. Use a diagram with editable "
         "labels for the workflow. Audience: colleagues trying the CLI for the first time.",
     ),
 )
@@ -59,11 +59,11 @@ def task_for(case: Case) -> str:
     )
 
 
-def run_case(case: Case, root: Path, *, model: str, image_model: str, docker_image: str) -> Path:
+def run_case(case: Case, root: Path, *, model: str, image_model: str) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     trace = root / "trace.jsonl"
     status = agent_cook([
-        "exec", "-C", str(root), "--sandbox", "docker", "--docker-image", docker_image,
+        "exec", "-C", str(root),
         "--model", model, "--model-api", "responses", "--image-model", image_model,
         "--skills-dir", str(SKILLS), "--skill", "pptx", "--trace", str(trace),
         "--timeout", "240", "--max-turns", "14", task_for(case),
@@ -113,7 +113,6 @@ def validate_deck(case: Case, result: Path, trace: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True, help="Directory for verified decks and traces.")
-    parser.add_argument("--docker-image", default="agent-cook-sandbox:local")
     parser.add_argument("--image-model", default=SEEDREAM)
     parser.add_argument("--model", help="Use this chat model for all topics.")
     args = parser.parse_args()
@@ -124,8 +123,7 @@ def main() -> None:
     work = output / "runs"
     for case in CASES:
         model = args.model or case.model
-        delivered = run_case(case, work / case.slug, model=model, image_model=args.image_model,
-                             docker_image=args.docker_image)
+        delivered = run_case(case, work / case.slug, model=model, image_model=args.image_model)
         target = output / case.slug
         target.mkdir()
         shutil.copyfile(delivered / "deck.pptx", target / "deck.pptx")

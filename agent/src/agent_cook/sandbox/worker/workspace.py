@@ -17,19 +17,23 @@ from agent_cook.sandbox.limits import (
     MAX_TEXT_FILE_BYTES,
     MAX_WRITE_BYTES,
 )
-from agent_cook.sandbox.paths import workspace_path
+from agent_cook.sandbox.paths import is_link, portable_path, workspace_path
 
-_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _SEARCH_SKIPS = frozenset({".git", ".venv", "__pycache__", "node_modules"})
 
 
-class Workspace:
+def _regular(info: os.stat_result) -> bool:
+    return stat.S_ISREG(info.st_mode) and not is_link(info) and info.st_nlink == 1
+
+
+class PosixWorkspace:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve(strict=True)
 
     @contextmanager
     def directory(self, path: str = ".", *, create: bool = False) -> Iterator[int]:
-        relative = workspace_path(path, allow_root=True)
+        relative = portable_path(path, allow_root=True)
         directory = os.open(self.root, _DIR_FLAGS)
         try:
             for part in PurePosixPath(relative).parts:
@@ -46,18 +50,18 @@ class Workspace:
             os.close(directory)
 
     def directory_path(self, path: str) -> Path:
-        relative = workspace_path(path, allow_root=True)
+        relative = portable_path(path, allow_root=True)
         with self.directory(relative):
             return self.root / relative
 
     @contextmanager
     def open_file(self, path: str) -> Iterator[BinaryIO]:
-        relative = PurePosixPath(workspace_path(path))
+        relative = PurePosixPath(portable_path(path))
         with self.directory(relative.parent.as_posix()) as directory:
             flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
             descriptor = os.open(relative.name, flags, dir_fd=directory)
             with os.fdopen(descriptor, "rb") as file:
-                if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+                if not _regular(os.fstat(file.fileno())):
                     raise ValueError("The path must point to a regular workspace file.")
                 yield file
 
@@ -69,15 +73,15 @@ class Workspace:
         return data
 
     def file_size(self, path: str) -> int:
-        relative = PurePosixPath(workspace_path(path))
+        relative = PurePosixPath(portable_path(path))
         with self.directory(relative.parent.as_posix()) as directory:
             info = os.stat(relative.name, dir_fd=directory, follow_symlinks=False)
-        if not stat.S_ISREG(info.st_mode):
+        if not _regular(info):
             raise ValueError("The path must point to a regular workspace file.")
         return info.st_size
 
     def write_bytes(self, path: str, data: bytes, *, overwrite: bool) -> None:
-        relative = PurePosixPath(workspace_path(path))
+        relative = PurePosixPath(portable_path(path))
         if len(data) > MAX_FILE_BYTES:
             raise ValueError("The file exceeds the workspace file size limit.")
         with self.directory(relative.parent.as_posix(), create=True) as directory:
@@ -87,7 +91,7 @@ class Workspace:
                 except FileNotFoundError:
                     pass
                 else:
-                    if not stat.S_ISREG(info.st_mode):
+                    if not _regular(info):
                         raise ValueError("The destination must be a regular workspace file.")
             temporary = f".cook-write-{uuid4().hex}"
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
@@ -115,7 +119,7 @@ class Workspace:
         self, directory: str, *, recursive: bool, skip_directories: frozenset[str] = frozenset(),
         scan_limit: int = MAX_SCAN_ENTRIES,
     ) -> tuple[list[tuple[str, str]], bool]:
-        pending = deque([workspace_path(directory, allow_root=True)])
+        pending = deque([portable_path(directory, allow_root=True)])
         found: list[tuple[str, str]] = []
         count = 0
         while pending:
@@ -126,17 +130,82 @@ class Workspace:
                     if count > scan_limit:
                         return sorted(found), True
                     try:
-                        relative = workspace_path((PurePosixPath(parent) / entry.name).as_posix())
+                        relative = portable_path((PurePosixPath(parent) / entry.name).as_posix())
+                        info = entry.stat(follow_symlinks=False)
                     except (ValueError, UnicodeError):
                         continue
-                    if entry.is_dir(follow_symlinks=False):
+                    if stat.S_ISDIR(info.st_mode) and not is_link(info):
                         if entry.name not in skip_directories:
                             found.append((relative, "directory"))
                             if recursive:
                                 pending.append(relative)
-                    elif entry.is_file(follow_symlinks=False):
+                    elif _regular(info):
                         found.append((relative, "file"))
         return sorted(found), False
+
+
+class WindowsWorkspace(PosixWorkspace):
+    """Workspace on NTFS. Native commands are stopped before host file operations resume."""
+
+    @contextmanager
+    def directory(self, path: str = ".", *, create: bool = False) -> Iterator[Path]:
+        parent = self.root
+        parts = (".", *PurePosixPath(portable_path(path, allow_root=True)).parts)
+        for part in parts:
+            parent /= part
+            if create:
+                parent.mkdir(exist_ok=True)
+            info = parent.lstat()
+            if is_link(info) or not stat.S_ISDIR(info.st_mode):
+                raise ValueError("Use a regular directory inside the workspace.")
+        yield parent
+
+    @contextmanager
+    def open_file(self, path: str) -> Iterator[BinaryIO]:
+        target, info = self._file(path)
+        with target.open("rb") as stream:
+            actual = os.fstat(stream.fileno())
+            if not _regular(actual) or not os.path.samestat(info, actual):
+                raise ValueError("The workspace file changed while opening it.")
+            yield stream
+
+    def _file(self, path: str) -> tuple[Path, os.stat_result]:
+        relative = PurePosixPath(portable_path(path))
+        with self.directory(relative.parent.as_posix()) as directory:
+            target = directory / relative.name
+            info = target.lstat()
+        if not _regular(info):
+            raise ValueError("The path must point to a regular workspace file.")
+        return target, info
+
+    def file_size(self, path: str) -> int:
+        return self._file(path)[1].st_size
+
+    def write_bytes(self, path: str, data: bytes, *, overwrite: bool) -> None:
+        relative = PurePosixPath(portable_path(path))
+        if len(data) > MAX_FILE_BYTES:
+            raise ValueError("The file exceeds the workspace file size limit.")
+        with self.directory(relative.parent.as_posix(), create=True) as directory:
+            target = directory / relative.name
+            if overwrite:
+                try:
+                    if not _regular(target.lstat()):
+                        raise ValueError("The destination must be a regular workspace file.")
+                except FileNotFoundError:
+                    pass
+            temporary = directory / f".cook-write-{uuid4().hex}"
+            try:
+                with temporary.open("xb") as stream:
+                    stream.write(data)
+                if overwrite:
+                    temporary.replace(target)
+                else:
+                    temporary.rename(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+
+
+Workspace = WindowsWorkspace if os.name == "nt" else PosixWorkspace
 
 
 def list_files(

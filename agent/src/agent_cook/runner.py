@@ -20,6 +20,7 @@ from agent_cook.model.openrouter_responses import OpenRouterResponsesModel
 from agent_cook.protocol.request import WebOptions
 from agent_cook.retry import RETRY_DELAYS
 from agent_cook.sandbox.interface import SandboxFactory
+from agent_cook.sandbox.native.factory import NativeSandboxFactory
 from agent_cook.state.session import Message, Session
 from agent_cook.tools.artifacts import ArtifactExporter
 from agent_cook.tools.images import register_image_tool
@@ -89,7 +90,9 @@ async def run_task(
                 PublicBrowser(browser_factory, resources, events.run_id, web.browser_origins)
                 if browser_factory is not None else None
             )
-            registry, tool_names = workspace_tools(exporter, public_browser=browser)
+            registry, tool_names = workspace_tools(
+                exporter, public_browser=browser, native_preview=isinstance(factory, NativeSandboxFactory),
+            )
             if image_model is not None:
                 image_tool = register_image_tool(registry, OpenRouterImageGenerator(client, image_model))
                 tool_names = (*tool_names, image_tool)

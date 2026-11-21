@@ -31,7 +31,7 @@ _CONFIG = Draft202012Validator(_section(
     models={"type": "object"},
     model_api={"enum": [*MODEL_APIS, None]},
     sandbox=_section(
-        backend={"enum": ["docker", "e2b", "none", None]},
+        backend={"enum": ["native", "docker", "e2b", "none", None]},
         docker_image=_TEXT, e2b_template=_TEXT, network={"type": "boolean"},
     ),
     server=_section(

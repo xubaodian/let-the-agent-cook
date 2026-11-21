@@ -44,14 +44,16 @@ def reference_server():
 
 
 def demo() -> int:
-    parser = argparse.ArgumentParser(description="Run a bundled task on the Docker workspace.")
+    parser = argparse.ArgumentParser(description="Run a bundled task in the native workspace.")
     parser.add_argument("name", choices=("quickstart", "shop-review", "event-registration", "combined-review"))
     name = parser.parse_args().name
+    if name == "event-registration":
+        parser.error("Run event-registration with the HTTP service to exercise the mock API. See examples/README.md.")
     args = [
-        "exec", "--sandbox", "docker", "--request", str(EXAMPLES / name / "run.json"),
+        "exec", "--request", str(EXAMPLES / name / "run.json"),
         "--max-turns", "24", "--timeout", "300",
     ]
-    if name in ("event-registration", "combined-review"):
+    if name == "combined-review":
         with reference_server():
             return main(args)
     return main(args)
