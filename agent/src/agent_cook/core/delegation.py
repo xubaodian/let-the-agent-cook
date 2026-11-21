@@ -48,7 +48,6 @@ def register_delegate(
         spec = AgentSpec(
             model=model_id, instructions=profile.instructions, tool_names=names,
             max_model_turns=min(parent.max_model_turns, profile.max_model_turns),
-            timeout_seconds=min(parent.timeout_seconds, profile.timeout_seconds),
             context_policy=parent.context_policy if model_id == parent.model else DEFAULT_CONTEXT_POLICY,
             require_submission=False,
         )
@@ -56,8 +55,9 @@ def register_delegate(
         child_context = ToolContext(events.run_id, frozenset(names), context.get_sandbox, events, context.hook)
         session = Session([Message(role="user", content=task)])
         events.emit("run.started", model=spec.model, agent=profile.name)
+        deadline = asyncio.timeout(profile.timeout_seconds)
         try:
-            async with asyncio.timeout(spec.timeout_seconds):
+            async with deadline:
                 result = await run_loop(
                     spec, session, model=model, tools=registry, tool_context=child_context, events=events,
                 )
@@ -66,7 +66,7 @@ def register_delegate(
             raise
         except Exception as error:
             events.emit("run.failed", error_type=type(error).__name__)
-            if isinstance(error, TimeoutError):
+            if isinstance(error, TimeoutError) and deadline.expired():
                 raise ToolError(f"Subagent '{profile.name}' timed out.") from error
             if isinstance(error, AgentRunError):
                 raise ToolError(f"Subagent '{profile.name}' failed. {error}") from error

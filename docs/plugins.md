@@ -51,7 +51,7 @@ uv run --project agent agent-cook --sandbox docker --request run.json
 
 ## 子 Agent
 
-`agents/data-reviewer.md` 的 frontmatter 声明角色，正文是子 Agent 的指令。`model` 省略或为 `inherit` 时使用父 Agent 模型。可选的 `max_model_turns` 和 `timeout_seconds` 会受到父任务预算约束。
+`agents/data-reviewer.md` 的 frontmatter 声明角色，正文是子 Agent 的指令。`model` 省略或为 `inherit` 时使用父 Agent 模型。`max_model_turns` 受父任务轮次限制。可用 `timeout_seconds` 显式限制一次 `delegate` 调用。
 
 ```markdown
 ---

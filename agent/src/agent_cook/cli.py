@@ -8,7 +8,6 @@ from collections.abc import Callable
 from dataclasses import asdict, replace
 from functools import partial
 from importlib.util import find_spec
-from math import ceil
 from pathlib import Path
 from shutil import copytree
 from subprocess import run
@@ -109,7 +108,7 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
         getattr(args, "session_image_model", None) or catalog.image.default,
     )
     spec = AgentSpec(
-        model=chat_model, max_model_turns=args.max_turns, timeout_seconds=args.timeout,
+        model=chat_model, max_model_turns=args.max_turns,
         context_policy=replace(DEFAULT_CONTEXT_POLICY, context_window=args.context_window),
         require_submission=False if args.sandbox == "native" else None,
     )
@@ -126,7 +125,6 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
             E2BSandboxFactory,
             args.config.e2b_template,
             api_key=key,
-            lifetime_seconds=ceil(spec.timeout_seconds) + 60,
         )
     factory = NativeSandboxFactory() if args.sandbox == "native" else (
         make_sandbox(allow_network=args.sandbox_network) if make_sandbox else None
@@ -211,7 +209,6 @@ def _parser(mode: str) -> argparse.ArgumentParser:
         "--context-window", type=int, help="Context window in tokens for the selected model",
     )
     parser.add_argument("--max-turns", type=int, help="Maximum number of model turns")
-    parser.add_argument("--timeout", type=float, help="Run time limit in seconds")
     return parser
 
 
@@ -250,7 +247,7 @@ def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCat
     elif args.sandbox in ("docker", "e2b"):
         # Docker-era user settings are still useful to serve. Local tasks use native isolation.
         args.sandbox = "native"
-    for name, default in (("context_window", DEFAULT_CONTEXT_POLICY.context_window), ("max_turns", 8), ("timeout", 120)):
+    for name, default in (("context_window", DEFAULT_CONTEXT_POLICY.context_window), ("max_turns", 8)):
         if getattr(args, name) is None:
             setattr(args, name, config.run.get(name, default))
     if mode == "serve":

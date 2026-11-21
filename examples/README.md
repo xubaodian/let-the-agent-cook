@@ -25,7 +25,7 @@
 
 ```bash
 ./cook docker
-./cook serve --sandbox docker --timeout 300 --max-turns 24 --request examples/event-registration/run.json
+./cook serve --sandbox docker --max-turns 24 --request examples/event-registration/run.json
 ```
 
 提交报告时，`reporting-studio` 根据 `out/report/validation.json` 核对交付文件和检查结果。提交站点时，`web-studio` 核对一张通过断言的截图和站点文件版本。页面、样式或数据更新后，重新预览即可生成新凭据。两个 Hook 均按提交路径生效。

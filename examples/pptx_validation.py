@@ -66,7 +66,7 @@ def run_case(case: Case, root: Path, *, model: str, image_model: str) -> Path:
         "exec", "-C", str(root),
         "--model", model, "--model-api", "responses", "--image-model", image_model,
         "--skills-dir", str(SKILLS), "--skill", "pptx", "--trace", str(trace),
-        "--timeout", "240", "--max-turns", "14", task_for(case),
+        "--max-turns", "14", task_for(case),
     ])
     if status:
         raise ValueError(f"{case.slug}: Agent Cook exited with status {status}.")

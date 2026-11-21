@@ -1,9 +1,29 @@
-from collections.abc import Sequence
+import asyncio
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from agent_cook.state.session import Message
 from agent_cook.tools.spec import ToolDefinition
+
+MODEL_CALL_TIMEOUT_SECONDS = 300.0
+
+
+class ModelCallTimeout(TimeoutError):
+    """One model call exhausted its elapsed time budget."""
+
+
+@asynccontextmanager
+async def model_call_deadline() -> AsyncIterator[None]:
+    deadline = asyncio.timeout(MODEL_CALL_TIMEOUT_SECONDS)
+    try:
+        async with deadline:
+            yield
+    except TimeoutError as error:
+        if deadline.expired():
+            raise ModelCallTimeout(f"The model call exceeded {MODEL_CALL_TIMEOUT_SECONDS:g} seconds.") from error
+        raise
 
 
 @dataclass(frozen=True, slots=True)

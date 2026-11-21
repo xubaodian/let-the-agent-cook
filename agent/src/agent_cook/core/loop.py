@@ -5,7 +5,7 @@ from agent_cook.context.compaction import ContextLimitError, prepare_context
 from agent_cook.context.prompts import execution_instructions
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.events.journal import RunEvents
-from agent_cook.model.client import ModelClient
+from agent_cook.model.client import ModelCallTimeout, ModelClient, model_call_deadline
 from agent_cook.protocol.artifacts import ArtifactRef
 from agent_cook.state.session import Message, Session
 from agent_cook.tools.artifacts import SUBMIT_RESULTS, stale_submissions
@@ -46,7 +46,11 @@ async def run_loop(
             raise AgentRunError(str(error)) from error
         events.emit("model.started", turn=turn_number)
         options = {"web_enabled": True} if spec.web_enabled else {}
-        turn = await model.next_turn(model=spec.model, messages=messages, tools=definitions, **options)
+        try:
+            async with model_call_deadline():
+                turn = await model.next_turn(model=spec.model, messages=messages, tools=definitions, **options)
+        except ModelCallTimeout as error:
+            raise AgentRunError(str(error)) from error
         # The hosted tool transcript contributes to usage but is not sent back by this runtime.
         hosted_context = bool(turn.web_sources) or any(turn.web_usage.values())
         budget.observe(messages, None if hosted_context else turn.prompt_tokens)

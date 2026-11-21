@@ -73,14 +73,13 @@ async def run_task(
     from httpx import Timeout
     from openai import AsyncOpenAI
 
-    # A stalled model request should time out before the run deadline.
-    request_timeout = min(600.0, spec.timeout_seconds * 0.75)
+    # Time out a stalled HTTP attempt before the model call's deadline.
     async with AsyncExitStack() as resources:
         client = await resources.enter_async_context(AsyncOpenAI(
             api_key=api_key,
             base_url=OPENROUTER_BASE_URL,
             max_retries=len(RETRY_DELAYS),
-            timeout=Timeout(request_timeout, connect=min(request_timeout, 5.0)),
+            timeout=Timeout(180.0, connect=5.0),
         ))
         registry = ToolRegistry()
         tool_names: tuple[str, ...] = ()

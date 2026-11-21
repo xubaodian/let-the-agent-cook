@@ -58,7 +58,7 @@ class ModelCatalogTest(unittest.TestCase):
                 ):
                     self.assertEqual(main(["exec", "-C", directory, *args, "Check."]), 0)
                 spec = run.await_args.args[0]
-                self.assertEqual((spec.model, spec.max_model_turns, spec.timeout_seconds), (chat, max_turns, 180))
+                self.assertEqual((spec.model, spec.max_model_turns), (chat, max_turns))
                 self.assertEqual(run.await_args.args[2], key)
                 self.assertEqual(run.await_args.kwargs["exa_api_key"], exa)
                 self.assertEqual(run.await_args.kwargs["image_model"], image)

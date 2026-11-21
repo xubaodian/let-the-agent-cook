@@ -1,5 +1,6 @@
 import asyncio
 import shlex
+from asyncio import sleep
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from functools import partial
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
     from e2b import AsyncSandbox
 
 _WORKER_USER = "cook"
+_LEASE_SECONDS = 600
 
 
 def _status_code(error: Exception) -> int | None:
@@ -47,7 +49,8 @@ def _retryable_io(error: Exception) -> bool:
 
 class E2BSandboxFactory:
     def __init__(
-        self, template: str, *, api_key: str | None = None, allow_network: bool = False, lifetime_seconds: int = 300,
+        self, template: str, *, api_key: str | None = None, allow_network: bool = False,
+        lifetime_seconds: int | None = None,
     ) -> None:
         if not template.strip():
             raise ValueError("Set an E2B template with the workspace worker installed.")
@@ -69,7 +72,7 @@ class E2BSandboxFactory:
                     AsyncSandbox.create,
                     template=self._template,
                     api_key=self._api_key,
-                    timeout=self._lifetime_seconds,
+                    timeout=self._lifetime_seconds if self._lifetime_seconds is not None else _LEASE_SECONDS,
                     allow_internet_access=self._allow_network,
                     network={"allow_public_traffic": False},
                     metadata={"agent_cook_run": run_id},
@@ -79,7 +82,11 @@ class E2BSandboxFactory:
         except Exception as error:
             raise SandboxError(f"E2B could not open the task sandbox ({type(error).__name__}).") from error
 
+        renewal = asyncio.create_task(self._keep_alive(session)) if self._lifetime_seconds is None else None
+
         async def exchange(payload: bytes, timeout: float) -> bytes:
+            if renewal is not None and renewal.done():
+                renewal.result()
             prefix = f"/tmp/agent-cook-{uuid4().hex}"
             request_path = f"{prefix}.request"
             response_path = f"{prefix}.response"
@@ -131,13 +138,28 @@ class E2BSandboxFactory:
                 )
 
         try:
-            yield WorkerSandbox(exchange)
+            try:
+                yield WorkerSandbox(exchange)
+            finally:
+                if renewal is not None:
+                    renewal.cancel()
+                    await asyncio.gather(renewal, return_exceptions=True)
         except BaseException:
             with suppress(Exception):
                 await self._kill(session)
             raise
         else:
             await self._kill(session)
+
+    @staticmethod
+    async def _keep_alive(session: "AsyncSandbox") -> None:
+        while True:
+            await sleep(_LEASE_SECONDS / 2)
+            try:
+                async with asyncio.timeout(15):
+                    await retry_transient(partial(session.set_timeout, _LEASE_SECONDS, request_timeout=4), _retryable_io)
+            except Exception as error:
+                raise SandboxError(f"E2B could not renew the task sandbox lease ({type(error).__name__}).") from error
 
     @staticmethod
     async def _kill(session: "AsyncSandbox") -> None:

@@ -105,7 +105,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "The kitchen is ready.\n")
         self.assertEqual(constructor_args, [{
             "api_key": "test-key", "base_url": OPENROUTER_BASE_URL, "max_retries": 2,
-            "timeout": Timeout(90.0, connect=5.0),
+            "timeout": Timeout(180.0, connect=5.0),
         }])
         self.assertNotIn("tools", create.call_args.kwargs)
         self.assertNotIn("test-key", raw_trace)
@@ -160,7 +160,7 @@ class ModelRetryTest(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as directory, patch("openai.AsyncOpenAI", side_effect=client):
             try:
                 result = await run_task(
-                    AgentSpec("fixture/model", timeout_seconds=10), "Test model retries.", "fixture-key",
+                    AgentSpec("fixture/model"), "Test model retries.", "fixture-key",
                     None, {}, events=RunEvents(), artifact_dir=Path(directory), model_api=api,
                 )
             except APIStatusError as error:

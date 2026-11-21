@@ -4,7 +4,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from agent_cook.protocol.ui import UiAttachment
-from agent_cook.sandbox.limits import MAX_COMMAND_SECONDS, MAX_FIND_RESULTS, MAX_WRITE_BYTES
+from agent_cook.sandbox.limits import DEFAULT_COMMAND_SECONDS, MAX_COMMAND_SECONDS, MAX_FIND_RESULTS, MAX_WRITE_BYTES
 from agent_cook.sandbox.urls import LOOPBACK_HOSTS
 from agent_cook.tools.artifacts import SUBMIT_RESULTS, ArtifactExporter
 from agent_cook.tools.public_browser import PublicBrowser
@@ -136,7 +136,7 @@ async def _run_command(arguments: dict[str, Any], context: ToolContext) -> ToolR
     result = await sandbox.exec(
         arguments["argv"],
         cwd=arguments.get("cwd", "."),
-        timeout_seconds=arguments.get("timeout_seconds", 30),
+        timeout_seconds=arguments.get("timeout_seconds", DEFAULT_COMMAND_SECONDS),
     )
     return ToolResult(
         json.dumps(asdict(result), ensure_ascii=False),

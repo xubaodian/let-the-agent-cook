@@ -6,7 +6,7 @@ from agent_cook.context.builder import build_context
 from agent_cook.context.policy import ContextPolicy
 from agent_cook.context.prompts import CHECKPOINT_HEADINGS, CHECKPOINT_PROMPT
 from agent_cook.events.journal import RunEvents
-from agent_cook.model.client import ModelClient
+from agent_cook.model.client import ModelClient, model_call_deadline
 from agent_cook.state.session import Checkpoint, Message, Session
 
 
@@ -97,7 +97,8 @@ async def _summarize(
     else:
         raise ContextLimitError("The checkpoint input exceeds the configured budget.")
 
-    turn = await model.next_turn(model=model_id, messages=messages, tools=())
+    async with model_call_deadline():
+        turn = await model.next_turn(model=model_id, messages=messages, tools=())
     markdown = (turn.message.content or "").strip()
     headings = tuple(line[3:].strip() for line in markdown.splitlines() if line.startswith("## "))
     if (

@@ -51,6 +51,21 @@ def e2b_sdk(create):
 
 
 class BackendTest(unittest.IsolatedAsyncioTestCase):
+    async def test_an_older_worker_keeps_its_command_limit(self):
+        rejected = json.dumps({
+            "version": 1, "ok": False, "error": "Command timeout must be between 0 and 120 seconds.",
+        }).encode()
+        completed = reply(exit_code=0, stdout="ready", stderr="", timed_out=False, truncated=False)
+        exchange = AsyncMock(side_effect=[rejected, completed, completed])
+        sandbox = WorkerSandbox(exchange)
+        for _ in range(2):
+            result = await sandbox.exec(["python", "-V"], cwd=".", timeout_seconds=180)
+            self.assertEqual(result.stdout, "ready")
+        self.assertEqual(
+            [json.loads(call.args[0])["arguments"]["timeout_seconds"] for call in exchange.await_args_list],
+            [180, 120, 120],
+        )
+
     async def test_docker_uses_a_private_workspace_and_removes_it_on_error(self):
         command = AsyncMock(side_effect=[
             (0, b"container\n", b""),
@@ -103,6 +118,32 @@ class BackendTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.commands.run.call_args.kwargs["cwd"], "/workspace")
         self.assertEqual(json.loads(payload)["operation"], "write_file")
         self.assertEqual(files.remove.await_count, 2)
+        session.kill.assert_awaited_once()
+
+    async def test_e2b_renews_a_live_lease_and_stops_renewing_on_exit(self):
+        tick, renewed = asyncio.Event(), asyncio.Event()
+
+        async def sleep(_):
+            await tick.wait()
+            tick.clear()
+
+        async def renew(*_, **__):
+            renewed.set()
+
+        session = SimpleNamespace(set_timeout=AsyncMock(side_effect=renew), kill=AsyncMock())
+        create = AsyncMock(return_value=session)
+        with (
+            patch.dict(sys.modules, {"e2b": e2b_sdk(create)}),
+            patch("agent_cook.sandbox.e2b.sleep", side_effect=sleep),
+        ):
+            async with E2BSandboxFactory("fixture-template").open("long-task"):
+                tick.set()
+                await asyncio.wait_for(renewed.wait(), timeout=1)
+                session.kill.assert_not_awaited()
+            tick.set()
+            await asyncio.sleep(0)
+
+        session.set_timeout.assert_awaited_once_with(create.call_args.kwargs["timeout"], request_timeout=4)
         session.kill.assert_awaited_once()
 
     async def test_docker_retries_start_read_and_cleanup_with_the_same_container_name(self):

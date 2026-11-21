@@ -134,7 +134,7 @@ def _load_agents(source: LocalTree) -> tuple[SubagentSpec, ...]:
         agents.append(SubagentSpec(
             name=metadata["name"], description=metadata["description"], instructions=instructions,
             tool_names=tuple(metadata.get("tools", ())), model=None if model == "inherit" else model,
-            max_model_turns=int(metadata.get("max_model_turns", 4)), timeout_seconds=metadata.get("timeout_seconds", 45),
+            max_model_turns=int(metadata.get("max_model_turns", 4)), timeout_seconds=metadata.get("timeout_seconds"),
         ))
     return tuple(agents)
 
