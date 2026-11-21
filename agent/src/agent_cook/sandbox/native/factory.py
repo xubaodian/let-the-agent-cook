@@ -123,7 +123,10 @@ class NativeSandbox:
             payload=json.dumps(arguments).encode(),
         )
         if result.timed_out or result.exit_code:
-            raise SandboxError("Local Chromium preview failed. " + result.stderr.strip()[-900:])
+            output = result.stderr.strip()
+            if len(output) > 1500:
+                output = output[:700] + "\n…\n" + output[-750:]
+            raise SandboxError(f"Local Chromium preview failed (exit {result.exit_code}). {output}")
         return json.loads(result.stdout)
 
     async def request(

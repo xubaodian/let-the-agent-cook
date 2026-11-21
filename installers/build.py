@@ -231,8 +231,7 @@ def linux(payload: Path, output: Path, work: Path) -> None:
         'if [ "$1" = configure ] && [ -r "$extra" ] && [ -r /sys/kernel/security/apparmor/profiles ] '
         '&& ! grep -q "^bwrap (" /sys/kernel/security/apparmor/profiles '
         '&& [ ! -e "$profile" ] && [ ! -L "$profile" ]; then\n'
-        '    install -m 0644 "$extra" "$profile"\n'
-        '    apparmor_parser -a "$profile"\n'
+        '    if apparmor_parser -a "$extra"; then install -m 0644 "$extra" "$profile"; fi\n'
         'fi\n', encoding="utf-8",
     )
     postinst.chmod(0o755)

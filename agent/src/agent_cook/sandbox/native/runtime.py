@@ -78,16 +78,21 @@ def _project() -> Path:
 def _python_roots(executable: Path) -> tuple[Path, ...]:
     prefix = executable.parent.parent
     if executable == Path(sys.executable).absolute() and not getattr(sys, "frozen", False):
-        return tuple(dict.fromkeys((Path(sys.prefix).resolve(), Path(sys.base_prefix).resolve())))
-    config = {}
-    for line in (prefix / "pyvenv.cfg").read_text(encoding="utf-8").splitlines():
-        if "=" in line:
-            key, value = line.split("=", 1)
-            config[key.strip()] = value.strip()
-    base = Path(config["home"])
-    if base.name.lower() in ("bin", "scripts"):
-        base = base.parent
-    return tuple(dict.fromkeys((prefix.resolve(), base.resolve())))
+        prefix, base = Path(sys.prefix), Path(sys.base_prefix)
+    else:
+        config = {}
+        for line in (prefix / "pyvenv.cfg").read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                config[key.strip()] = value.strip()
+        base = Path(config["home"])
+        if base.name.lower() in ("bin", "scripts"):
+            base = base.parent
+    roots = (prefix, prefix.resolve(), base, base.resolve())
+    # A managed venv can point through a version alias on its way to the actual binary.
+    if os.name == "posix":
+        roots += (executable.resolve(strict=True).parent.parent,)
+    return tuple(dict.fromkeys(roots))
 
 
 async def python_runtime() -> tuple[Path, tuple[Path, ...]]:
@@ -101,7 +106,7 @@ async def python_runtime() -> tuple[Path, tuple[Path, ...]]:
     version = (manifest / ".python-version").read_text(encoding="utf-8").strip()
     with (manifest / "uv.lock").open("rb") as lock:
         stamp = hashlib.file_digest(lock, "sha256").hexdigest()[:16]
-    directory = cache_directory() / "python" / stamp
+    directory = (cache_directory() / "python" / stamp).resolve()
     executable = directory / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
     marker = directory / ".installed"
     if not marker.is_file() or not executable.is_file():

@@ -53,6 +53,7 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...]) -> list[str]
 (allow sysctl-read)
 (allow sysctl-write (sysctl-name "kern.grade_cputype"))
 (allow file-read-metadata)
+(allow file-read-data (literal "/"))
 (allow file-read* {readable} {devices})
 (allow file-map-executable {readable})
 (allow file-write* {writable} (literal "/dev/null") (literal "/dev/zero"))
