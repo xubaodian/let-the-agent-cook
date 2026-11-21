@@ -54,8 +54,20 @@ class NativeDeliveryTest(unittest.TestCase):
         self.docker = self.enterContext(patch("agent_cook.cli.prepare_docker", side_effect=AssertionError))
 
     def run_task(self, turns, *, interactive=False):
-        create = AsyncMock(side_effect=turns)
-        with patch.dict(sys.modules, {"openai": sdk(create)}):
+        turns = iter(turns)
+        self.observations = {}
+
+        async def create(**options):
+            self.observations.update(
+                (message["tool_call_id"], message["content"])
+                for message in options["messages"] if message["role"] == "tool"
+            )
+            turn = next(turns)
+            if isinstance(turn, BaseException):
+                raise turn
+            return turn
+
+        with patch.dict(sys.modules, {"openai": sdk(AsyncMock(side_effect=create))}):
             args = ["-C", str(self.root), "--timeout", "300", "--max-turns", "12"]
             if interactive:
                 with patch("sys.stdin", io.StringIO(f'Process @"{_FOLDER}".\n/open\n/exit\n')):
@@ -94,7 +106,8 @@ class NativeDeliveryTest(unittest.TestCase):
         self.assertEqual(events[-1]["type"], "run.completed", events[-1])
         for event in events:
             if event["type"] == "tool.finished":
-                self.assertFalse(event["data"]["is_error"], trace.read_text(encoding="utf-8"))
+                call_id = event["data"]["tool_call_id"]
+                self.assertFalse(event["data"]["is_error"], f"{call_id}: {self.observations.get(call_id)}")
         results, = runs.glob("*-results")
         open_results.assert_called_once_with(results)
         self.assertIn(str(results), self.stderr.getvalue())

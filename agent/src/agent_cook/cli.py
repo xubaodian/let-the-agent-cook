@@ -187,6 +187,8 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument("--image-model", help="Image API model ID (or set OPENROUTER_IMAGE_MODEL)")
     if mode in ("local", "exec"):
         parser.add_argument("--json", action="store_true", help="Stream JSONL run events on stdout")
+    if mode == "doctor":
+        parser.add_argument("--runtime", action="store_true", help="Prepare and test the workspace Python runtime")
     parser.add_argument("--trace", type=Path, help="Write the run to a new JSONL file at this path")
     service = mode in ("serve", "docker")
     parser.add_argument(
@@ -518,7 +520,7 @@ def _doctor(args: argparse.Namespace, catalog: ModelCatalog) -> int:
     }
     if args.sandbox == "native":
         try:
-            asyncio.run(NativeSandboxFactory().probe())
+            asyncio.run(NativeSandboxFactory().probe(python=args.runtime))
         except SandboxError as error:
             checks["Native process isolation"] = False
             print(error, file=sys.stderr)

@@ -35,8 +35,8 @@ def smoke(executable: Path, *, files: bool = False) -> None:
         if len(sales) != 1 or "Notebook" not in sales[0].read_text(encoding="utf-8"):
             raise ValueError(f"The installed CLI could not unpack the sample. {result.stderr}")
         doctor = subprocess.run(
-            [str(executable), "doctor", *command[1:]], cwd=directory, env=environment,
-            capture_output=True, encoding="utf-8", timeout=60,
+            [str(executable), "doctor", "--runtime", *command[1:]], cwd=directory, env=environment,
+            capture_output=True, encoding="utf-8", timeout=240,
         )
         if doctor.returncode or "OK  Native process isolation" not in doctor.stdout:
             raise ValueError(f"The installed CLI could not run in native isolation.\n{doctor.stdout}{doctor.stderr}")

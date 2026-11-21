@@ -15,6 +15,7 @@ _MAC_SERVICES = (
     "com.apple.system.logger", "com.apple.cfprefsd.agent", "com.apple.cfprefsd.daemon",
     "com.apple.system.opendirectoryd.libinfo", "com.apple.system.notification_center",
     "com.apple.SecurityServer", "com.apple.trustd", "com.apple.trustd.agent",
+    "com.apple.PowerManagement.control",
 )
 
 
@@ -46,22 +47,26 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...]) -> list[str]
     profile = f"""(version 1)
 (deny default)
 (allow process-fork)
-(allow process-exec {readable})
+(allow process-exec)
 (allow signal (target same-sandbox))
+(allow process-info* (target same-sandbox))
 (allow sysctl-read)
+(allow sysctl-write (sysctl-name "kern.grade_cputype"))
 (allow file-read-metadata)
 (allow file-read* {readable} {devices})
-(allow file-write* {writable} (literal "/dev/null"))
+(allow file-map-executable {readable})
+(allow file-write* {writable} (literal "/dev/null") (literal "/dev/zero"))
 (allow mach-lookup {services})
 """
-    return [str(executable), "-p", profile, *argv]
+    return [str(executable), "-p", profile, "--", *argv]
 
 
 def _bubblewrap(argv: list[str], root: Path, cwd: Path, reads: tuple[Path, ...]) -> list[str]:
     if not (executable := shutil.which("bwrap")):
         raise SandboxError("Install Bubblewrap from your Linux distribution to run local commands.")
     result = [
-        executable, "--unshare-all", "--disable-userns", "--new-session", "--die-with-parent", "--cap-drop", "ALL",
+        executable, "--unshare-all", "--unshare-user", "--disable-userns", "--new-session", "--die-with-parent",
+        "--cap-drop", "ALL",
         "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
     ]
     for path in (Path("/usr"), Path("/bin"), Path("/lib"), Path("/lib64"), *reads):

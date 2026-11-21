@@ -144,11 +144,16 @@ class NativeSandbox:
                 raise SandboxError(str(error)[:600]) from error
             raise SandboxError(f"The native workspace does not support {operation!r}.")
 
-    async def probe(self) -> None:
-        argv = ("cmd", "/d", "/c", "exit", "0") if sys.platform == "win32" else ("true",)
-        result = await self.exec(argv, cwd=".", timeout_seconds=5)
+    async def probe(self, *, python: bool = False) -> None:
+        if python:
+            argv = ("python", "-I", "-c", "import openpyxl, pptx, playwright")
+        else:
+            argv = ("cmd", "/d", "/c", "exit", "0") if sys.platform == "win32" else ("true",)
+        result = await self.exec(argv, cwd=".", timeout_seconds=15 if python else 5)
         if result.exit_code or result.timed_out:
-            raise SandboxError("Native process isolation did not start. " + result.stderr.strip()[:400])
+            raise SandboxError(
+                f"Native isolation probe failed (exit {result.exit_code}). {result.stderr.strip()[:400]}"
+            )
 
 
 class NativeSandboxFactory:
@@ -157,6 +162,6 @@ class NativeSandboxFactory:
         with TemporaryDirectory(prefix="agent-cook-") as path:
             yield NativeSandbox(Path(path))
 
-    async def probe(self) -> None:
+    async def probe(self, *, python: bool = False) -> None:
         async with self.open("doctor") as sandbox:
-            await sandbox.probe()
+            await sandbox.probe(python=python)
