@@ -1,3 +1,4 @@
+from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from dataclasses import replace
 from functools import partial
@@ -10,16 +11,35 @@ from agent_cook.extensions.hooks import HookRunner
 from agent_cook.extensions.mcp import register_mcp_tools
 from agent_cook.extensions.plugins import Plugin
 from agent_cook.extensions.skills import SkillCatalog
+from agent_cook.model.catalog import MODEL_APIS
+from agent_cook.model.client import ModelTurn
 from agent_cook.model.openrouter import OPENROUTER_BASE_URL, OpenRouterModel
 from agent_cook.model.openrouter_images import OpenRouterImageGenerator
+from agent_cook.model.openrouter_responses import OpenRouterResponsesModel
 from agent_cook.protocol.request import WebOptions
 from agent_cook.sandbox.interface import SandboxFactory
-from agent_cook.state.session import Session
+from agent_cook.state.session import Message, Session
 from agent_cook.tools.artifacts import ArtifactExporter
 from agent_cook.tools.images import register_image_tool
 from agent_cook.tools.public_browser import PublicBrowser
 from agent_cook.tools.registry import ToolRegistry
+from agent_cook.tools.spec import ToolDefinition
 from agent_cook.tools.workspace import workspace_tools
+
+
+class _OpenRouterModels:
+    def __init__(self, client, override: str | None, apis: Mapping[str, str] | None) -> None:
+        self._chat = OpenRouterModel(client)
+        self._responses = OpenRouterResponsesModel(client)
+        self._override = override
+        self._apis = apis or {}
+
+    async def next_turn(
+        self, *, model: str, messages: Sequence[Message], tools: Sequence[ToolDefinition], web_enabled: bool = False,
+    ) -> ModelTurn:
+        api = self._override or self._apis.get(model, "chat_completions")
+        adapter = self._responses if api == "responses" else self._chat
+        return await adapter.next_turn(model=model, messages=messages, tools=tools, web_enabled=web_enabled)
 
 
 async def run_task(
@@ -31,6 +51,8 @@ async def run_task(
     *,
     events: RunEvents,
     artifact_dir: Path,
+    model_api: str | None = None,
+    model_apis: Mapping[str, str] | None = None,
     image_model: str | None = None,
     skills: SkillCatalog | None = None,
     plugins: tuple[Plugin, ...] = (),
@@ -40,6 +62,9 @@ async def run_task(
     session: Session | None = None,
 ) -> RunResult:
     """Assemble and execute one task for either the CLI or HTTP service."""
+    if model_api is not None and model_api not in MODEL_APIS:
+        raise ValueError("model_api must be chat_completions or responses.")
+
     from openai import AsyncOpenAI
 
     async with AsyncExitStack() as resources:
@@ -85,7 +110,7 @@ async def run_task(
         return await run_agent(
             spec,
             task,
-            model=OpenRouterModel(client),
+            model=_OpenRouterModels(client, model_api, model_apis),
             tools=registry,
             sandbox_factory=factory,
             input_files=workspace_inputs,

@@ -20,7 +20,7 @@ from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.delivery import publish_results, result_snapshots
 from agent_cook.events.journal import RunEvents, write_jsonl
 from agent_cook.local_files import PortablePaths, collect_inputs, portable_path
-from agent_cook.model.catalog import ModelCatalog
+from agent_cook.model.catalog import MODEL_APIS, ModelCatalog
 from agent_cook.onboarding import connect
 from agent_cook.protocol.events import RunEvent
 from agent_cook.protocol.request import RunRequest
@@ -96,6 +96,9 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
             "Choose a chat model via --model, the task's model, OPENROUTER_MODEL, "
             "or chat.default in --models-config. Open agent-cook in a terminal for guided setup."
         )
+    model_api = _select_model(args.model_api, request.model_api, "OPENROUTER_MODEL_API", None)
+    if model_api is not None and model_api not in MODEL_APIS:
+        raise ValueError("OPENROUTER_MODEL_API must be chat_completions or responses.")
     if (args.image_model is not None or request.image_model is not None) and args.sandbox is None:
         raise ValueError("Selecting an image model for the task requires --sandbox.")
     image_model = _select_model(
@@ -140,6 +143,7 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
     ):
         raise ValueError("Mounted skills, plugin files, and hooks require --sandbox.")
     return spec, factory, {
+        "model_api": model_api, "model_apis": catalog.chat_apis,
         "image_model": image_model, "skills": skills, "plugins": plugins,
         "mcp_tools": request.mcp_tools, "web": request.web, "browser_factory": browser_factory,
     }
@@ -168,6 +172,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument("--models-config", type=Path, help="Use a custom JSON model catalog")
     parser.add_argument("--list-models", action="store_true", help="Print the configured chat and image models as JSON")
     parser.add_argument("-m", "--model", help="Chat model ID (or set OPENROUTER_MODEL)")
+    parser.add_argument("--model-api", choices=MODEL_APIS, help="OpenRouter chat protocol (or set OPENROUTER_MODEL_API)")
     parser.add_argument("--image-model", help="Image API model ID (or set OPENROUTER_IMAGE_MODEL)")
     if mode in ("local", "exec"):
         parser.add_argument("--json", action="store_true", help="Stream JSONL run events on stdout")
@@ -504,7 +509,10 @@ def main(argv: list[str] | None = None) -> int:
         args.release_image = release_image()
         args.docker_image = args.docker_image or args.release_image or DEFAULT_DOCKER_IMAGE
         if args.list_models:
-            print(json.dumps(asdict(catalog), indent=2))
+            configured_models = asdict(catalog)
+            if not catalog.chat_apis:
+                del configured_models["chat_apis"]
+            print(json.dumps(configured_models, indent=2))
             return 0
         interactive = mode == "resume" or (mode == "local" and args.task is None and args.request is None)
         if interactive:

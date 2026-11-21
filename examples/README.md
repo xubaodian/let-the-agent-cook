@@ -39,3 +39,15 @@ AGENT_COOK_TEST_BROWSER=1 uv run --project agent --extra mcp --extra examples \
 ```
 
 报名站可在交付目录执行 `python serve.py` 后打开 `http://127.0.0.1:8075/`。双插件站点可在交付的 `out/site/` 对应目录执行 `python -m http.server 8075 --bind 127.0.0.1` 后打开同一地址。
+
+## PowerPoint 验收
+
+三个主题分别为门店经营复盘（4 页）、博物馆展览提案（5 页）和 Agent Cook 上手指南（4 页）。验收通过 Responses 调用 DeepSeek V4.1 Flash 1017 或 Grok 4.7，再通过 Seedream 5.5 生成封面。脚本检查 PPT 能打开、标题顺序和页数符合要求、正文可编辑，以及提交的封面已嵌入第一页。
+
+在仓库根目录配置 OpenRouter 并构建 Docker 工作区后运行以下命令。输出目录下会保存通过检查的 PPT 和运行记录。GitHub Actions 中同名验收工作流可读取 `OPENROUTER_PPT_TEST_KEY` 仓库密钥。
+
+```bash
+uv run --project agent --locked --extra examples python examples/pptx_validation.py --output ./pptx-validation
+```
+
+普通 CI 在 Docker 中通过模拟的模型和图片响应验证真实工作区执行与交付。产物 `pptx-protocol-fixtures` 用于检查协议和工具回归。

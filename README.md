@@ -60,11 +60,15 @@ uv run --project agent agent-cook --models-config ./models.json '用一句话介
 
 也可直接通过命令行、任务 JSON 或环境变量指定 OpenRouter 模型 ID。运行任务需要选择对话模型。在带沙箱的运行中选定生图模型后，Agent 可调用 `generate_image`。两类模型复用同一个 API Key。[生图用法](docs/workspace-tools.md#生图)
 
+对话模型可使用 Chat Completions 或 Responses。通过 `--model-api responses`、任务 JSON 的 `model_api`、`OPENROUTER_MODEL_API` 或模型目录的 `chat_apis` 选择协议，优先级按此顺序。模型目录可为不同模型指定协议，例如 `"chat_apis": {"deepseek/deepseek-v4.1-flash-1017": "responses"}`。默认使用 `chat_completions`。
+
+Responses 请求由本地 Session 提供上下文，工具结果按 `call_id` 回传。OpenRouter 的 Responses 接口采用无状态请求。 [OpenRouter 接口文档](https://openrouter.ai/docs/api_reference/responses/overview)
+
 ## 执行与上下文
 
 公共执行提示词指导 Agent 按用户目标完成脚本、文件和工具操作，按需读取 Skill，验证并交付结果。工作区 Run 以主 Agent 的 `submit_results` 回执交付文件。Runtime 会核对已提交文件的内容，文件变更后需要提交当前版本才可完成。[公共执行提示词](agent/src/agent_cook/context/execution_prompt.md)
 
-上下文默认按 32,768 tokens 的窗口计算。用 `--context-window` 填入实际模型窗口，或在 Python 入口传入 `AgentSpec.context_policy`。预扣输出及误差余量后，估算输入达到预算的 80% 时，Runtime 会在完整工具轮次之间尝试压缩。首次请求和压缩后重估整份输入，其余轮次以上一次模型返回的 `usage.prompt_tokens` 加新增消息的估算量为准。
+上下文默认按 32,768 tokens 的窗口计算。用 `--context-window` 填入实际模型窗口，或在 Python 入口传入 `AgentSpec.context_policy`。预扣输出及误差余量后，估算输入达到预算的 80% 时，Runtime 会在完整工具轮次之间尝试压缩。首次请求和压缩后重估整份输入，其余轮次以上一次模型返回的输入 token 数加新增消息的估算量为准。
 
 压缩把已完成的旧轮次写成六段 Markdown checkpoint，继续使用同一工作区。模型保留任务原文和最近的完整调用与回执。单个轮次超出输入预算时也可压缩。成功的 checkpoint 及压缩前后的输入估算记录在 `context.compacted` 事件中。[上下文默认配置](agent/src/agent_cook/context/policy.py)
 
@@ -79,7 +83,7 @@ uv run --project agent agent-cook --models-config ./models.json '用一句话介
 | `server/` | HTTP API、持久化任务队列和 SSE。 |
 | `core/` | `run.py` 管 Run 的预算、结束状态和任务资源。`loop.py` 推进模型和工具轮次。 |
 | `context/` | 管理执行提示词、输入预算、上下文组装和 checkpoint 压缩。 |
-| `model/` | `client.py` 定义模型接口。`openrouter.py` 负责 Chat Completions 的消息和工具调用格式。 |
+| `model/` | `client.py` 定义模型接口。`openrouter.py` 和 `openrouter_responses.py` 适配 OpenRouter 的两种对话协议。 |
 | `tools/` | `spec.py` 和 `registry.py` 管工具契约、授权和分派。`workspace.py` 注册工作区工具，`images.py` 接入生图，`artifacts.py` 导出交付文件。 |
 | `extensions/` | 加载插件清单、Skill 包、子 Agent 定义、工具 Hook 和 MCP 配置。 |
 | `sandbox/` | `interface.py` 定义任务环境接口。`docker.py` 和 `e2b.py` 管各自的生命周期和传输。`worker/` 在沙箱内执行共用操作。 |

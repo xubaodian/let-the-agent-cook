@@ -1,0 +1,51 @@
+name: Live OpenRouter PowerPoint validation
+
+on:
+  pull_request:
+    paths:
+      - 'agent/**'
+      - 'sandbox/**'
+      - 'plugins/reporting-studio/skills/pptx/**'
+      - 'examples/pptx_validation.py'
+      - '.github/workflows/pptx-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-pptx:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check for the opt-in OpenRouter credential
+        id: credential
+        env:
+          OPENROUTER_PPT_TEST_KEY: ${{ secrets.OPENROUTER_PPT_TEST_KEY }}
+        run: |
+          if [[ -n "${OPENROUTER_PPT_TEST_KEY:-}" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Live PowerPoint runs require the OPENROUTER_PPT_TEST_KEY Actions secret."
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.credential.outputs.ready == 'true'
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        if: steps.credential.outputs.ready == 'true'
+      - name: Build the sandbox
+        if: steps.credential.outputs.ready == 'true'
+        run: docker build -f sandbox/Dockerfile -t agent-cook-sandbox:local .
+      - name: Generate and verify three PowerPoint decks
+        if: steps.credential.outputs.ready == 'true'
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_PPT_TEST_KEY }}
+        run: uv run --project agent --locked --extra examples python examples/pptx_validation.py --output "$RUNNER_TEMP/pptx-validation"
+      - uses: actions/upload-artifact@v7
+        if: steps.credential.outputs.ready == 'true'
+        with:
+          name: verified-openrouter-decks
+          path: |
+            ${{ runner.temp }}/pptx-validation/*/deck.pptx
+            ${{ runner.temp }}/pptx-validation/*/trace.jsonl
+          if-no-files-found: error

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator, ValidationError
 
+from agent_cook.model.catalog import MODEL_APIS
 from agent_cook.sandbox.urls import public_https_origin
 
 _STRINGS = {
@@ -21,6 +22,7 @@ _REQUEST = Draft202012Validator({
         "schema_version": {"type": "integer", "const": 1},
         "task": {"type": "string", "minLength": 1},
         "model": {"type": "string", "pattern": r"\S"},
+        "model_api": {"enum": list(MODEL_APIS)},
         "image_model": {"type": "string", "pattern": r"\S"},
         "plugins": _STRINGS,
         "skill_directories": _STRINGS,
@@ -58,10 +60,13 @@ class RunRequest:
     web: WebOptions = WebOptions()
     model: str | None = None
     image_model: str | None = None
+    model_api: str | None = None
 
     def __post_init__(self) -> None:
         if not self.task.strip():
             raise ValueError("A task must contain text.")
+        if self.model_api is not None and self.model_api not in MODEL_APIS:
+            raise ValueError("model_api must be chat_completions or responses.")
 
     @classmethod
     def from_file(cls, path: Path) -> "RunRequest":
@@ -93,4 +98,5 @@ class RunRequest:
             web=WebOptions(web.get("enabled", False), tuple(web.get("browser_origins", ()))),
             model=data.get("model"),
             image_model=data.get("image_model"),
+            model_api=data.get("model_api"),
         )
