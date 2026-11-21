@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "The Python runtime for Let the Agent Cook"
 requires-python = ">=3.11"
 dependencies = [
+    "httpx>=0.28,<1",
     "jsonschema>=4.23,<5",
     "keyring>=25.6,<26",
     "openai>=1.66,<3",

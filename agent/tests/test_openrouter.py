@@ -10,6 +10,8 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from httpx import Timeout
+
 from agent_cook.cli import main
 from agent_cook.core.types import AgentSpec
 from agent_cook.events.journal import RunEvents
@@ -102,7 +104,8 @@ class CliTest(unittest.TestCase):
         self.assertEqual(duplicate_status, 1)
         self.assertEqual(stdout.getvalue(), "The kitchen is ready.\n")
         self.assertEqual(constructor_args, [{
-            "api_key": "test-key", "base_url": OPENROUTER_BASE_URL, "max_retries": 2, "timeout": 90.0,
+            "api_key": "test-key", "base_url": OPENROUTER_BASE_URL, "max_retries": 2,
+            "timeout": Timeout(90.0, connect=5.0),
         }])
         self.assertNotIn("tools", create.call_args.kwargs)
         self.assertNotIn("test-key", raw_trace)

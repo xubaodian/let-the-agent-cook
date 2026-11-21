@@ -66,15 +66,17 @@ async def run_task(
     if model_api is not None and model_api not in MODEL_APIS:
         raise ValueError("model_api must be chat_completions or responses.")
 
+    from httpx import Timeout
     from openai import AsyncOpenAI
 
+    # A stalled model request should time out before the run deadline.
+    request_timeout = min(600.0, spec.timeout_seconds * 0.75)
     async with AsyncExitStack() as resources:
         client = await resources.enter_async_context(AsyncOpenAI(
             api_key=api_key,
             base_url=OPENROUTER_BASE_URL,
             max_retries=len(RETRY_DELAYS),
-            # A stalled model request should time out before the run deadline.
-            timeout=spec.timeout_seconds * 0.75,
+            timeout=Timeout(request_timeout, connect=min(request_timeout, 5.0)),
         ))
         registry = ToolRegistry()
         tool_names: tuple[str, ...] = ()

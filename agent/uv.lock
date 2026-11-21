@@ -13,6 +13,7 @@ name = "agent-cook"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "jsonschema" },
     { name = "keyring" },
     { name = "openai" },
@@ -44,6 +45,7 @@ server = [
 requires-dist = [
     { name = "e2b", marker = "extra == 'e2b'", specifier = ">=2.56,<3" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.115,<1" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "jsonschema", specifier = ">=4.23,<5" },
     { name = "keyring", specifier = ">=25.6,<26" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.29,<2" },
