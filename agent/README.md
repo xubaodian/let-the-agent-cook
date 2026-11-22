@@ -13,6 +13,8 @@ Agent Cook 是一个接入 OpenRouter 的终端助手。你可以用它对话、
 
 安装脚本会准备 Python、Node.js、npm 和 Chromium，以及处理 Excel、Word、PPT、PDF、图片和表格数据的常用库，完成后打开 CLI。Ubuntu 源码安装需要 Bubblewrap（`sudo apt install bubblewrap`）。需要用实际排版引擎预览 PPT 时，可加 `--with-office` 安装 LibreOffice。 [安装指南](docs/install.md) · [GitHub Releases](https://github.com/xubaodian/let-the-agent-cook/releases)
 
+需要从任意终端目录运行 `agent-cook` 时，用 `./install --global`（macOS / Linux）或 `.\install.cmd --global`（Windows）安装到当前用户，再打开一个新终端。全局源码版在 CLI 中输入 `/update` 即可更新，下次启动生效。 [安装与更新](docs/install.md#全局安装与更新)
+
 首次启动时，在浏览器授权 OpenRouter 或粘贴已有的 API Key，再选择支持工具调用的模型。Exa 用于网页检索，可按 Enter 跳过。 [配置说明](docs/install.md#配置)
 
 ## CLI 用法
@@ -24,10 +26,11 @@ Agent Cook 是一个接入 OpenRouter 的终端助手。你可以用它对话、
 | `agent-cook` | 打开交互会话，直接输入任务。 |
 | `agent-cook exec "任务"` | 执行一次任务。用 `--input "路径"` 添加文件或文件夹，可重复传入。 |
 | `agent-cook resume --last` | 继续当前工作目录的最近一次会话。 |
+| `agent-cook update` | 更新全局源码版，等同于交互模式的 `/update`。 |
 | `agent-cook doctor` | 检查模型配置和本机沙箱。 |
 | `agent-cook --list-plugins` | 查看两个 Studio 及其引用的 Skill。 |
 
-交互时用 `@路径` 或 `@"带空格的路径"` 选择文件或文件夹。Agent 处理副本，交付后会打印结果目录的路径。用 `/open` 打开当前会话的结果，`/model` 查看或切换模型，`/help` 查看其他命令。
+交互时从启动目录用 `@路径` 或 `@"带空格的路径"` 选择文件或文件夹。Agent 处理副本，默认把交付归档到 `~/Agent Cook/workspace/日期/会话 ID/`。用 `/open` 打开当前会话的结果，`/model` 查看或切换模型，`/help` 查看其他命令。 [输入路径与结果归档](docs/install.md#输入路径与结果归档)
 
 每个任务默认最多 **300 轮模型调用**，一次模型响应计一轮。用 `agent-cook --max-turns 500` 或 `agent-cook exec --max-turns 500 "任务"` 调整，也可在 `agent-cook.json` 中设置 `run.max_turns`，命令行参数优先。任务没有总执行时限。 [单次调用时限](docs/workspace-tools.md#输出与上限)
 

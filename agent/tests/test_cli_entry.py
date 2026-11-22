@@ -4,6 +4,7 @@ import os
 import sys
 import unittest
 from contextlib import asynccontextmanager, redirect_stderr, redirect_stdout
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -38,6 +39,10 @@ def tool(turn, name, **arguments):
 
 
 class CliEntryTest(unittest.TestCase):
+    def setUp(self):
+        self.workspace = Path(self.enterContext(TemporaryDirectory())).resolve()
+        self.enterContext(patch.dict(os.environ, AGENT_COOK_WORKSPACE=str(self.workspace)))
+
     def test_exec_accepts_stdin_and_streams_only_events_on_stdout(self):
         create = AsyncMock(return_value=response("Done."))
         with (
@@ -50,7 +55,9 @@ class CliEntryTest(unittest.TestCase):
             redirect_stderr(io.StringIO()),
         ):
             status = main(["exec", "-C", directory, "--json", "-"])
-            trace = next((Path(directory) / ".agent-cook" / "runs").glob("*.jsonl"))
+            trace, = (self.workspace / date.today().isoformat()).glob("*/*.jsonl")
+            self.assertEqual(trace.stem, trace.parent.name)
+            self.assertFalse((Path(directory) / ".agent-cook").exists())
             self.assertEqual(trace.read_text(encoding="utf-8"), output.getvalue())
 
         self.assertEqual(status, 0)
@@ -174,7 +181,12 @@ class CliEntryTest(unittest.TestCase):
                     status = main(["resume", "--last", "-C", directory])
                 self.assertEqual(status, 0, diagnostics.getvalue())
 
-            state = LocalSessions(root / ".agent-cook" / "sessions.sqlite3").load(None)
+            state = LocalSessions.for_directory(self.workspace, root).load(None)
+            session = self.workspace / state.created_on / state.id
+            self.assertEqual(len(list(session.glob("*.jsonl"))), 2)
+            self.assertEqual(len(list(session.glob("*-results"))), 2)
+            self.assertEqual(Path(state.result_dir).parent, session)
+            self.assertFalse((root / ".agent-cook").exists())
             self.assertEqual(state.revision, 2)
             self.assertEqual(state.inputs["sales data.csv"], b"value\n7\n")
             self.assertEqual(state.results["out/note.txt"], b"second revision")

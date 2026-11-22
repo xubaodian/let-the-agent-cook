@@ -16,6 +16,7 @@
     "chat_apis": {}
   },
   "model_api": null,
+  "workspace_dir": null,
   "sandbox": {
     "backend": null,
     "docker_image": null,

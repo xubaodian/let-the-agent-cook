@@ -57,6 +57,11 @@ try {
         if ($words.Count -and $words[0] -eq "--launch") {
             $words.RemoveAt(0)
             Install-Environment
+            if ($words.Count -and $words[0] -eq "--global") {
+                $words.RemoveAt(0)
+                & $python -m agent_cook install-global @words
+                exit $LASTEXITCODE
+            }
             $runtimeArgs = @()
             if ($words.Count -and $words[0] -eq "--with-office") {
                 $runtimeArgs = @($words[0])

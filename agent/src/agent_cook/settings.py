@@ -39,6 +39,7 @@ _CONFIG = Draft202012Validator(_section(
         port={"type": "integer", "minimum": 1, "maximum": 65535},
         data_dir=_TEXT, concurrency=_POSITIVE_INTEGER,
     ),
+    workspace_dir=_TEXT,
     run=_section(
         context_window=_POSITIVE_INTEGER, max_turns=_POSITIVE_INTEGER,
         # Accept older context window and task deadline fields in saved configurations.
@@ -69,6 +70,7 @@ class AgentConfig:
     sandbox: dict = field(default_factory=dict)
     server: dict = field(default_factory=dict, repr=False)
     run: dict = field(default_factory=dict)
+    workspace_dir: str | None = None
 
     @classmethod
     def load(cls, path: Path | None = None) -> "AgentConfig":
@@ -144,6 +146,12 @@ class AgentConfig:
     def e2b_template(self) -> str:
         return os.environ.get("E2B_TEMPLATE", "").strip() or (self.sandbox.get("e2b_template") or "").strip()
 
+    def workspace(self) -> Path:
+        override = os.environ.get("AGENT_COOK_WORKSPACE", "").strip() or (self.workspace_dir or "").strip()
+        if override:
+            return (self.path.parent / Path(override).expanduser()).resolve()
+        return Path.home() / "Agent Cook" / "workspace"
+
 
 def _read_config(path: Path, *, missing_ok: bool) -> dict:
     try:
@@ -177,15 +185,19 @@ def _restrict_windows_file(path: Path) -> None:
 
 
 def _write_private_json(path: Path, data: dict) -> None:
+    write_private_file(path, (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+
+
+def write_private_file(path: Path, content: bytes, *, executable: bool = False) -> None:
     descriptor, filename = mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(filename)
     os.close(descriptor)
     try:
         if sys.platform == "win32":
             _restrict_windows_file(temporary)
-        with temporary.open("w", encoding="utf-8") as stream:
-            json.dump(data, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
+        elif executable:
+            temporary.chmod(0o700)
+        temporary.write_bytes(content)
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)

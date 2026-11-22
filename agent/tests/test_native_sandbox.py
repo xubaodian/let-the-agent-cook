@@ -46,11 +46,12 @@ _OFFICE = dedent("""
 class NativeDeliveryTest(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(TemporaryDirectory())).resolve()
+        self.workspace = Path(self.enterContext(TemporaryDirectory())).resolve()
         copytree(DATA / _FOLDER, self.root / _FOLDER)
         self.original = (self.root / _SALES).read_bytes()
         self.stderr = self.enterContext(redirect_stderr(io.StringIO()))
         self.enterContext(redirect_stdout(io.StringIO()))
-        self.enterContext(patch.dict(os.environ, ENV))
+        self.enterContext(patch.dict(os.environ, {**ENV, "AGENT_COOK_WORKSPACE": str(self.workspace)}))
         self.docker = self.enterContext(patch("agent_cook.cli.prepare_docker", side_effect=AssertionError))
 
     def run_task(self, turns, *, interactive=False):
@@ -101,8 +102,7 @@ class NativeDeliveryTest(unittest.TestCase):
         self.assertEqual(status, 0, self.stderr.getvalue())
         self.docker.assert_not_called()
         self.assertEqual((self.root / _SALES).read_bytes(), self.original)
-        runs = self.root / ".agent-cook/runs"
-        trace, = runs.glob("*.jsonl")
+        trace, = self.workspace.glob("*/*/*.jsonl")
         events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
         failed = [
             event["data"]["tool_call_id"] for event in events
@@ -110,7 +110,8 @@ class NativeDeliveryTest(unittest.TestCase):
         ]
         self.assertFalse(failed, "\n".join(f"{call_id}: {self.observations.get(call_id)}" for call_id in failed))
         self.assertEqual(events[-1]["type"], "run.completed", events[-1])
-        results, = runs.glob("*-results")
+        results, = trace.parent.glob("*-results")
+        self.assertFalse((self.root / ".agent-cook").exists())
         open_results.assert_called_once_with(results)
         self.assertIn(str(results), self.stderr.getvalue())
         self.assertEqual((results / _SALES).read_text(encoding="utf-8"), "modified copy")
@@ -128,7 +129,7 @@ class NativeDeliveryTest(unittest.TestCase):
                 tool(2, "submit_results", paths=[_SALES]),
                 error,
             ]), status)
-        self.assertFalse(list((self.root / ".agent-cook/runs").glob("*-results")))
+        self.assertFalse(list(self.workspace.glob("*/*/*-results")))
         self.assertEqual((self.root / _SALES).read_bytes(), self.original)
 
 

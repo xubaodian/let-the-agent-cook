@@ -25,11 +25,12 @@ SALES = f"{FIXTURE}/表格/销售 数据.csv"
 class DockerDeliveryTest(unittest.TestCase):
     def setUp(self):
         self.directory = Path(self.enterContext(TemporaryDirectory())).resolve()
+        self.workspace = Path(self.enterContext(TemporaryDirectory())).resolve()
         copytree(DATA / FIXTURE, self.directory / FIXTURE)
         self.original = (self.directory / SALES).read_bytes()
         self.diagnostics = self.enterContext(redirect_stderr(io.StringIO()))
         self.enterContext(redirect_stdout(io.StringIO()))
-        self.enterContext(patch.dict(os.environ, ENV))
+        self.enterContext(patch.dict(os.environ, {**ENV, "AGENT_COOK_WORKSPACE": str(self.workspace)}))
 
     def run_task(self, *turns, interactive=False):
         create = AsyncMock(side_effect=turns)
@@ -59,8 +60,9 @@ class DockerDeliveryTest(unittest.TestCase):
             )
         self.assertEqual(status, 0, self.diagnostics.getvalue())
         self.assertEqual((self.directory / SALES).read_bytes(), self.original)
-        runs = self.directory / ".agent-cook/runs"
-        delivered, = runs.glob("*-results")
+        delivered, = self.workspace.glob("*/*/*-results")
+        runs = delivered.parent
+        self.assertFalse((self.directory / ".agent-cook").exists())
         open_results.assert_called_once_with(delivered)
         self.assertIn(str(delivered), self.diagnostics.getvalue())
         self.assertEqual((delivered / SALES).read_text(encoding="utf-8"), "final")
@@ -80,12 +82,12 @@ class DockerDeliveryTest(unittest.TestCase):
                     interruption,
                 )
                 self.assertEqual(result, status, self.diagnostics.getvalue())
-        runs = self.directory / ".agent-cook/runs"
-        self.assertFalse(list(runs.glob("*-results")))
+        self.assertFalse(list(self.workspace.glob("*/*/*-results")))
         self.assertNotIn("Results:", self.diagnostics.getvalue())
         self.assertEqual((self.directory / SALES).read_bytes(), self.original)
         last_events = {
-            json.loads(trace.read_text(encoding="utf-8").splitlines()[-1])["type"] for trace in runs.glob("*.jsonl")
+            json.loads(trace.read_text(encoding="utf-8").splitlines()[-1])["type"]
+            for trace in self.workspace.glob("*/*/*.jsonl")
         }
         self.assertEqual(last_events, {"run.failed", "run.cancelled"})
-        self.assertEqual(len(list(runs.glob(f"*-artifacts/*/{SALES}"))), 2)
+        self.assertEqual(len(list(self.workspace.glob(f"*/*/*-artifacts/*/{SALES}"))), 2)

@@ -1,8 +1,12 @@
 import json
+import os
 import sqlite3
 from contextlib import closing
 from dataclasses import asdict, dataclass, field, replace
+from datetime import date
+from hashlib import sha256
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from time import time_ns
 from uuid import uuid4
 
@@ -21,6 +25,7 @@ class LocalSession:
     inputs: dict[str, bytes] = field(default_factory=dict)
     results: dict[str, bytes] = field(default_factory=dict)
     result_dir: str | None = None
+    created_on: str = field(default_factory=lambda: date.today().isoformat())
 
     def continue_history(self, model: str) -> Session:
         messages = list(self.history.messages)
@@ -46,6 +51,26 @@ class LocalSessions:
                     content BLOB NOT NULL, PRIMARY KEY (session_id, kind, path)
                 );
             """)
+
+    @classmethod
+    def for_directory(cls, workspace: Path, directory: Path) -> "LocalSessions":
+        identity = sha256(os.fsencode(os.path.normcase(directory.resolve()))).hexdigest()
+        database = workspace / ".sessions" / f"{identity}.sqlite3"
+        legacy = directory / ".agent-cook" / "sessions.sqlite3"
+        if legacy.is_file() and not database.exists():
+            database.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with closing(sqlite3.connect(database.with_suffix(".lock"), timeout=5)) as lease:
+                lease.execute("BEGIN IMMEDIATE")
+                if not database.exists():
+                    with TemporaryDirectory(dir=database.parent) as staging:
+                        copy = Path(staging) / "sessions.sqlite3"
+                        with (
+                            closing(sqlite3.connect(legacy.resolve().as_uri() + "?mode=ro", uri=True)) as old,
+                            closing(sqlite3.connect(copy)) as new,
+                        ):
+                            old.backup(new)
+                        copy.replace(database)
+        return cls(database)
 
     def load(self, session_id: str | None) -> LocalSession:
         with closing(sqlite3.connect(self._database)) as db, db:
@@ -83,7 +108,7 @@ class LocalSessions:
             "checkpoint": asdict(session.history.checkpoint) if session.history.checkpoint is not None else None,
             "failed_tool_calls": sorted(session.history.failed_tool_calls),
             "model": session.model, "image_model": session.image_model, "sandbox": session.sandbox,
-            "result_dir": session.result_dir,
+            "result_dir": session.result_dir, "created_on": session.created_on,
         }, ensure_ascii=False)
         with closing(sqlite3.connect(self._database)) as db, db:
             if session.revision == 0:

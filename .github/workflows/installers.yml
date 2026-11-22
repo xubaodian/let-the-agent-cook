@@ -53,10 +53,13 @@ jobs:
           fi
       - name: Install locked packaging dependencies
         run: uv sync --project . --locked --all-extras
-      - name: Validate native host paths and onboarding
+      - name: Validate native host paths, onboarding and managed updates
+        env:
+          AGENT_COOK_TEST_MANAGED: '1'
         run: |
           uv run --project . --no-sync python -m unittest discover -s tests -p test_local_files.py -v
           uv run --project . --no-sync python -m unittest discover -s tests -p test_onboarding.py -v
+          uv run --project . --no-sync python -m unittest discover -s tests -p test_updates.py -v
       - name: Verify native isolation and CLI folder delivery
         env:
           AGENT_COOK_TEST_NATIVE: '1'

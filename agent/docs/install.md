@@ -6,6 +6,26 @@
 
 源码安装同时准备工作区 Python 依赖、Node.js 和 npm，以及 Playwright Chromium，后续启动复用用户缓存。用 `./install --with-office` 或 `.\install.cmd --with-office` 加装 LibreOffice，以便把 PPT 转成真实预览。加装在 macOS 使用 Homebrew，在 Windows 使用 WinGet，在 Ubuntu 使用 APT。平台安装工具会按需提示权限。 [预装依赖与 PPT 预览](workspace-tools.md#办公与数据处理依赖)
 
+## 全局安装与更新
+
+在新版源码的 `agent/` 目录执行 `./install --global`（macOS / Linux）或 `.\install.cmd --global`（Windows）。安装器在用户目录准备独立的 CLI，并尝试把命令入口加入用户 PATH。安装后打开新终端，从要处理文件的目录运行 `agent-cook`。已经保存的 `agent-cook.json` 会继续读取。源码目录已有的 `.env` 在首次全局安装时复制一份到版本目录的上一级，后续版本共用该文件。 [uv PATH 设置](https://docs.astral.sh/uv/reference/cli/#uv-tool-update-shell)
+
+| 系统 | 全局源码安装目录 |
+| --- | --- |
+| macOS | `~/Library/Application Support/Agent Cook/cli` |
+| Linux | `$XDG_DATA_HOME/agent-cook/cli`，未设置时使用 `~/.local/share/agent-cook/cli` |
+| Windows | `%LOCALAPPDATA%\Agent Cook\cli` |
+
+| 交互命令 | 终端等价命令 | 用途 |
+| --- | --- | --- |
+| `/update` | `agent-cook update` | 安装 GitHub `main` 的最新提交，下次启动生效。 |
+| `/update --check` | `agent-cook update --check` | 查看已装版本和 GitHub 最新提交。 |
+| `/update --rollback` | `agent-cook update --rollback` | 下次启动恢复上一版。 |
+
+更新用提交 SHA 下载源码，在独立目录按新版锁文件准备环境，再用当前配置试启动。若目标版本无法读取配置，终端会显示诊断并继续使用当前版本。可以调整报错字段或准备一份兼容配置，运行 `agent-cook update --config 路径` 重试，并用同一配置启动。更新过程保留原配置文件、凭据和会话。日常保留当前版和上一版，准备新版时最多同时有三个版本。旧进程仍占用第三个版本时，等它退出后再更新。
+
+原生安装包通过 GitHub Releases 安装新版本。 [Agent Cook Releases](https://github.com/xubaodian/let-the-agent-cook/releases/latest)
+
 ## 从原生安装包安装
 
 从 [Agent Cook Releases](https://github.com/xubaodian/let-the-agent-cook/releases/latest) 下载对应的安装包。CLI 和 Python 随安装包提供，打开后使用与源码安装相同的向导。
@@ -23,7 +43,7 @@
 1. 打开 Agent Cook。按 Enter 在浏览器授权 OpenRouter，或输入 `key` 无回显粘贴已有 Key。可录入 Exa Key 或按 Enter 跳过，然后选择对话模型或输入模型 ID。
 2. 输入 `/example` 生成样例目录。把终端给出的任务粘贴回 CLI。处理自己的文件时，可用 `@路径` 或 `@"带空格的目录"` 选择文件夹。多个输入可以一起选择。
 3. 本地脚本通过系统沙箱执行。Linux 源码用户需安装 Bubblewrap，例如在 Ubuntu 运行 `sudo apt install bubblewrap`。用 `agent-cook doctor --runtime` 可验证 Python、Node.js、npm 和 Chromium。
-4. 成功后，终端会显示结果目录的绝对路径。输入 `/open` 可在文件管理器打开。安装包的应用入口将任务记录和结果保存在用户主目录的 `Agent Cook/.agent-cook/runs/`。
+4. 成功后，终端会显示结果目录的绝对路径。输入 `/open` 可在文件管理器打开。
 
 附加目录时保留目录名和文件层级，原件保留在宿主机。每个文件最多 16 MiB，一批输入最多 32 MiB。导入跳过目录内的符号链接与 Windows 联接。路径冲突会提示具体文件或文件夹。成功后 `<run_id>-results/` 包含通过最终校验的产物。提交批次与记录在同一层，供回放与续接使用。
 
@@ -37,6 +57,20 @@ sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /e
 sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 ./cook doctor --runtime
 ```
+
+## 输入路径与结果归档
+
+`@路径` 的补全、相对路径和 `--input` 都以启动命令的目录为准。也可以用 `agent-cook -C 路径` 指定输入目录。文件会复制到本次任务的沙箱，最终产物和日志按会话归档到公共工作区。工作区默认是用户主目录下的 `Agent Cook/workspace/`。
+
+| 路径 | 内容 |
+| --- | --- |
+| `日期/会话 ID/<run_id>-results/` | 本次任务最终交付的文件。 |
+| `日期/会话 ID/<run_id>.jsonl` | 运行日志，可用于回放。 |
+| `日期/会话 ID/<run_id>-artifacts/` | 各次提交的产物副本。 |
+
+日期取会话建立时的本地日期，续接时沿用同一个会话目录。一次 `exec` 单独归档。在同一个输入目录运行 `agent-cook resume --last` 会继续该目录的最近会话。旧版在输入目录保存过会话时，CLI 会把会话索引复制到公共工作区。已有的结果可从原路径打开。显式指定 `--trace` 时，该次运行的产物归档在日志旁边。
+
+可用 `agent-cook.json` 的 `workspace_dir` 指定其他工作区，或用环境变量 `AGENT_COOK_WORKSPACE` 覆盖。相对工作区路径以配置文件所在目录为准。`/config` 显示当前工作区的绝对路径。
 
 ## 配置
 
@@ -53,7 +87,7 @@ sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 | `/setup` | 连接 OpenRouter、更新可选的 Exa Key 并选择默认模型。 |
 | `/key`、`/key openrouter`、`/key exa` | 无回显更换指定的 Key，下一条任务生效。OpenRouter 校验失败时保留原值。 |
 | `/model`、`/model <ID>` | 查看当前模型及候选，或切换并保存模型。 |
-| `/config` | 显示配置路径、当前模型和 Key 的配置来源。 |
+| `/config` | 显示配置与工作区路径、当前模型和 Key 的配置来源。 |
 
 用 `--config /path/to/agent-cook.json` 显式使用另一份配置。原有环境变量仍可覆盖配置，其来源会在 `/config` 和 `/key` 中显示。已有 OpenRouter 系统凭据和旧版 `settings.json` 仍可读取。手动编辑后重启即可加载更改。
 

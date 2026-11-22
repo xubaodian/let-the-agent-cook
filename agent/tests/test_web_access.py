@@ -353,7 +353,7 @@ class WebCliTest(unittest.TestCase):
                 catalog = _configure(args, root, "serve")
                 job = RunRequest.from_file(request)
                 prepared = _prepare(args, job, catalog)
-                result, _, _ = _execute(args, root, prepared, job.task, "fixture-key", {"proof.png": old_proof.read_bytes()})
+                result, _, _ = _execute(args, prepared, job.task, "fixture-key", {"proof.png": old_proof.read_bytes()})
             self.assertEqual(result.text, "Verified the pricing page.", stderr.getvalue())
             self.assertEqual(factory.call_args_list, [
                 call(DEFAULT_DOCKER_IMAGE, allow_network=False), call(DEFAULT_DOCKER_IMAGE, allow_network=True),
