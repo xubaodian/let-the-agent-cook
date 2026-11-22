@@ -74,6 +74,9 @@ class NativeSandbox:
             office = office_executable()
             if office is None:
                 raise SandboxError("LibreOffice is unavailable. Run agent-cook setup-runtime to prepare it.")
+            if sys.platform == "darwin":
+                # NSBundle resolves the .app directory when soffice starts.
+                return office, (office.parents[2],)
             if sys.platform == "win32":
                 program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files")).resolve()
                 if office.is_relative_to(program_files):
