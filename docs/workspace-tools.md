@@ -38,7 +38,7 @@ flowchart TD
 | `copy_file` | 复制工作区里的单个文件，支持二进制，默认保留已有目标。 |
 | `run_command` | 用 `argv`、`cwd` 和 `timeout_seconds` 运行 Python、Node.js 或后端提供的系统程序。返回退出码、stdout、stderr、超时与截断状态。 |
 | `playwright` | 预览工作区 HTML，支持点击、填值、按键、文本断言和 PNG 截图。服务端后端还支持临时测试服务器和允许列表内的公网 HTTPS 页面。 |
-| `generate_image` | 用配置的 OpenRouter 图片模型生成一张图，返回工作区路径、格式、字节数和模型 ID。 |
+| `generate_image` | 用配置的 OpenRouter 生图模型生成封面、网站主图或说明插画等素材，返回工作区路径、格式、字节数和模型 ID。 |
 | `submit_results` | 批量导出指定文件，返回 `ArtifactRef` 并记录产物和 UI 附件。随后 Agent 可以继续总结结果。 |
 
 `run_command` 统一了命令执行入口。需要 shell 时，可以在 `argv` 中显式选择当前系统的 Shell，例如 macOS 和 Linux 的 `bash`、Windows 的 `cmd`。工作目录和超时由沙箱校验。[OpenAI Shell 工具指南](https://developers.openai.com/api/docs/guides/tools-shell)
@@ -69,9 +69,9 @@ flowchart TD
 
 ## 按需读取 Skill
 
-启用工作区时，可以用 `--skills-dir` 配置本机的 Skill 目录，可重复指定。目录包含一组 Skill 子目录，每项以带 YAML frontmatter 的 `SKILL.md` 为入口，`name` 与目录名一致。
+启用工作区时，Agent Cook 默认挂载 6 个内置 Skill。用 `--skills-dir` 可加入本机的 Skill 目录，显式提供的同名 Skill 优先于内置版。每项以带 YAML frontmatter 的 `SKILL.md` 为入口，`name` 与目录名一致。
 
-用 `--skill` 指定本次任务需要的 Skill。使用 JSON 任务请求时，通过 `skills` 数组指定名单。[Plugin 和任务扩展](plugins.md)
+用 `--skill` 或任务 JSON 中的 `skills` 缩小本次挂载名单。已启用 Plugin 引用的 Skill 一并纳入。 [Plugin 和任务扩展](plugins.md)
 
 ```bash
 uv run --project agent agent-cook --skills-dir /path/to/skills \
@@ -86,9 +86,11 @@ uv run --project agent agent-cook --skills-dir /path/to/skills \
 
 使用沙箱时，可用 `--image-model` 或任务 JSON 的 `image_model` 选择生图模型并启用 `generate_image`。也可通过 `OPENROUTER_IMAGE_MODEL` 或模型列表中的 `image.default` 配置默认生图模型。选择支持 OpenRouter Image API 的模型。对话和生图复用 `OPENROUTER_API_KEY`，由主进程分别调用对应接口。[模型配置](install.md#模型配置) · [OpenRouter Image API](https://openrouter.ai/blog/tutorials/image-generation/)
 
+做 PPT 或网站时，Agent 可以在需要新配图的位置调用生图工具，例如活动页主视觉、宣讲封面或概念插画。优先复用用户给的素材，按实际布局挑选比例。保留可编辑文字和由原始数据生成的图表。PPT 将图片嵌入文件，网站将图片作为本地资源随页面交付。
+
 | 工具参数 | 用法 |
 |---|---|
-| `prompt` | 必填。描述画面、风格和构图。 |
+| `prompt` | 必填。描述用途、画面、风格和构图，注明给标题或正文留白的位置。 |
 | `aspect_ratio` | 可选。指定宽高比，例如 `16:9`、`9:16` 或 `1:1`。 |
 | `resolution` | 可选。指定模型支持的分辨率档位，例如 `1K` 或 `2K`。 |
 | `output_dir` | 可选。工作区相对目录，默认为 `generated-images`。文件名由工具生成。 |

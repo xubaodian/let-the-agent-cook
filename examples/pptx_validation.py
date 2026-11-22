@@ -9,8 +9,6 @@ from zipfile import ZipFile
 
 from agent_cook.cli import main as agent_cook
 
-REPO = Path(__file__).resolve().parents[1]
-SKILLS = REPO / "plugins/reporting-studio/skills"
 DEEPSEEK = "deepseek/deepseek-v4.1-flash-1017"
 GROK = "x-ai/grok-4.7"
 SEEDREAM = "bytedance-seed/seedream-5-5"
@@ -65,7 +63,7 @@ def run_case(case: Case, root: Path, *, model: str, image_model: str) -> Path:
     status = agent_cook([
         "exec", "-C", str(root),
         "--model", model, "--model-api", "responses", "--image-model", image_model,
-        "--skills-dir", str(SKILLS), "--skill", "pptx", "--trace", str(trace),
+        "--trace", str(trace),
         "--timeout", "240", "--max-turns", "14", task_for(case),
     ])
     if status:

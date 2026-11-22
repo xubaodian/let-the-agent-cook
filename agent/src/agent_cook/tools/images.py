@@ -11,12 +11,18 @@ from agent_cook.tools.spec import ToolContext, ToolDefinition, ToolError, ToolRe
 
 _GENERATE_IMAGE = ToolDefinition(
     "generate_image",
-    "Generate one image from a text prompt using the configured OpenRouter image model. "
-    "Use the returned workspace file in your work or pass its path to submit_results to deliver it.",
+    "Generate one original image with the configured OpenRouter image model. "
+    "Use it when new imagery supports the deliverable, such as a website hero, PowerPoint cover, "
+    "campaign concept, or explanatory illustration. Reuse suitable supplied assets first. "
+    "Match the aspect ratio to the layout and place the returned workspace file in the final work. "
+    "Use editable text, source data, or design code for exact content such as charts and labels.",
     {
         "type": "object",
         "properties": {
-            "prompt": {"type": "string", "minLength": 1, "maxLength": 8000},
+            "prompt": {
+                "type": "string", "minLength": 1, "maxLength": 8000,
+                "description": "Describe the visual's subject, placement, style, composition, and space for overlays.",
+            },
             "aspect_ratio": {
                 "type": "string",
                 "maxLength": 9,

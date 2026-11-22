@@ -96,7 +96,10 @@ async def run_task(
             if image_model is not None:
                 image_tool = register_image_tool(registry, OpenRouterImageGenerator(client, image_model))
                 tool_names = (*tool_names, image_tool)
-        servers = tuple(server for plugin in plugins for server in plugin.mcp_servers)
+        servers = tuple(
+            server for plugin in plugins if mcp_tools is not None or plugin.connect_mcp_by_default
+            for server in plugin.mcp_servers
+        )
         mcp_names = await register_mcp_tools(resources, registry, servers, selected=mcp_tools)
         exa_key = (exa_api_key or os.environ.get("EXA_API_KEY", "")).strip()
         exa_names = register_exa_tools(registry, exa_key) if exa_key and web.enabled is not False else ()
@@ -104,18 +107,22 @@ async def run_task(
         tool_names += mcp_names
         hosted_web = web.enabled is True and not exa_names
         instructions = spec.instructions
+        for plugin in plugins:
+            if plugin.instructions:
+                instructions += f"\n\nPlugin {plugin.name}\n{plugin.instructions}"
+                if plugin.skill_refs:
+                    instructions += f"\nReferenced skills: {', '.join(plugin.skill_refs)}."
         if hosted_web or exa_names:
             instructions += "\n\nUse web search to find sources and web fetch to read a known URL. Cite the sources you use."
         if browser_factory is not None:
             instructions += (
                 "\n\nUse Playwright on an approved public origin when reading the page requires interaction or a screenshot."
             )
-        spec = replace(
-            spec, tool_names=tool_names, web_enabled=hosted_web,
-            instructions=skills.instructions(instructions) if skills is not None else instructions.strip(),
-        )
         hooks = tuple(hook for plugin in plugins for hook in plugin.hooks)
         trees = tuple(tree for plugin in plugins for tree in plugin.files)
+        if skills is not None:
+            instructions = skills.instructions(instructions, bundled_prefix=skills.bundled_prefix(inputs, trees))
+        spec = replace(spec, tool_names=tool_names, web_enabled=hosted_web, instructions=instructions.strip())
         workspace_inputs = (
             partial(skills.workspace_files, inputs, extra_trees=trees)
             if skills is not None and (skills.names or trees) else inputs

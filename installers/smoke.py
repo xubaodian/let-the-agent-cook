@@ -23,6 +23,9 @@ def smoke(executable: Path, *, files: bool = False) -> None:
         models = subprocess.check_output([*command, "--list-models"], cwd=directory, encoding="utf-8")
         if json.loads(models)["chat"]["default"] != "installed/test":
             raise ValueError("The installed CLI could not read its model catalog.")
+        plugins = subprocess.check_output([*command, "--list-plugins"], cwd=directory, encoding="utf-8")
+        if {entry["name"] for entry in json.loads(plugins)} != {"reporting-studio", "project-reporting-studio"}:
+            raise ValueError("The installed CLI could not load its bundled studios.")
         result = subprocess.run(
             command, input="/config\n/example\n/exit\n", capture_output=True, cwd=directory, env=environment,
             encoding="utf-8", check=True, timeout=30,

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator, ValidationError
 
+from agent_cook.extensions.plugins import plugin_path
 from agent_cook.model.catalog import MODEL_APIS
 from agent_cook.sandbox.urls import public_https_origin
 
@@ -91,7 +92,7 @@ class RunRequest:
         web = data.get("web", {})
         return cls(
             task=data["task"],
-            plugins=tuple(base / item for item in data.get("plugins", ())),
+            plugins=tuple(plugin_path(item, base) for item in data.get("plugins", ())),
             skill_directories=tuple(base / item for item in directories),
             mounted_skills=tuple(skills) if skills is not None else None,
             mcp_tools=tuple(data["mcp_tools"]) if "mcp_tools" in data else None,

@@ -24,6 +24,7 @@ jobs:
           uv tool install --python 3.12 "${RUNNER_TEMP}"/agent-wheel/*.whl
           cd "${RUNNER_TEMP}"
           "$(uv tool dir --bin)/agent-cook" --list-models
+          "$(uv tool dir --bin)/agent-cook" --list-plugins
 
   docker:
     strategy:
