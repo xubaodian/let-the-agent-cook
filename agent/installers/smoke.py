@@ -9,14 +9,14 @@ from tempfile import TemporaryDirectory
 
 
 def smoke(executable: Path, *, files: bool = False) -> None:
-    with TemporaryDirectory(prefix="agent-cook-installed-") as directory:
+    with TemporaryDirectory(prefix="Agent Cook 安装验证 ") as directory:
         config = Path(directory) / "agent-cook.json"
         config.write_text(json.dumps({
             "api_keys": {"openrouter": "installed-key-fixture", "exa": "installed-exa-fixture"},
             "models": {"chat": {"available": ["installed/test"], "default": "installed/test"}},
         }), encoding="utf-8")
         command = [str(executable), "-C", directory, "--config", str(config)]
-        workspace = Path(directory) / "workspace"
+        workspace = Path(directory) / "结果 工作区"
         environment = {
             **os.environ, "OPENROUTER_API_KEY": "", "EXA_API_KEY": "", "OPENROUTER_MODEL": "",
             "AGENT_COOK_WORKSPACE": str(workspace),

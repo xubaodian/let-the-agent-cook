@@ -9,7 +9,7 @@ $python = Join-Path $env:UV_PROJECT_ENVIRONMENT "Scripts\python.exe"
 function Find-Uv {
     $onPath = Get-Command uv.exe -CommandType Application -ErrorAction SilentlyContinue
     $previous = Join-Path (Split-Path $root -Parent) ".agent-cook\tools\uv.exe"
-    foreach ($candidate in @((Join-Path $managed "uv.exe"), $previous, $onPath.Source)) {
+    foreach ($candidate in @($env:AGENT_COOK_UV, (Join-Path $managed "uv.exe"), $previous, $onPath.Source)) {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
             $version = & $candidate --version
             if ($LASTEXITCODE -eq 0 -and $version -match '^uv\s+(\d+\.\d+\.\d+)(\s|$)') {
@@ -45,7 +45,7 @@ function Install-Environment {
     $pythonVersion = (Get-Content -LiteralPath (Join-Path $project ".python-version") -Raw).Trim()
     Write-Host "Installing Agent Cook with Python $pythonVersion ..."
     & $uv sync --project $project --locked --python $pythonVersion --extra examples --extra server --extra e2b
-    if ($LASTEXITCODE -ne 0) { throw "Could not install the locked Agent Cook dependencies." }
+    if ($LASTEXITCODE -ne 0) { throw "Could not install the locked Python dependencies for '$project'. See the uv error above." }
     $env:AGENT_COOK_UV = $uv
 }
 
@@ -59,7 +59,7 @@ try {
             Install-Environment
             if ($words.Count -and $words[0] -eq "--global") {
                 $words.RemoveAt(0)
-                & $python -m agent_cook install-global @words
+                & $python -I -m agent_cook install-global @words
                 exit $LASTEXITCODE
             }
             $runtimeArgs = @()
@@ -67,7 +67,7 @@ try {
                 $runtimeArgs = @($words[0])
                 $words.RemoveAt(0)
             }
-            & $python -m agent_cook setup-runtime @runtimeArgs
+            & $python -I -m agent_cook setup-runtime @runtimeArgs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         } else {
             if ($words.Count -gt 1 -or ($words.Count -eq 1 -and $words[0] -notin @("--docker", "--with-office"))) {
@@ -77,13 +77,13 @@ try {
             if ($words.Count -and $words[0] -eq "--docker") {
                 $words[0] = "docker"
             } else {
-                & $python -m agent_cook setup-runtime @words
+                & $python -I -m agent_cook setup-runtime @words
                 exit $LASTEXITCODE
             }
         }
     }
     if (!(Test-Path -LiteralPath $python -PathType Leaf)) {
-        throw "Run install.cmd to set up Agent Cook."
+        throw "Run install.cmd from '$project' to set up Agent Cook."
     }
     $entry = @("-m", "agent_cook")
     if ($words.Count -and $words[0] -eq "run") {
@@ -99,10 +99,13 @@ try {
     }
     if (Test-Path -LiteralPath $envFile -PathType Leaf) {
         $uv = Find-Uv
-        if (!$uv) { throw "Run install.cmd to restore uv for .env loading." }
-        & $uv run --project $project --no-sync --env-file $envFile $python @entry @words
+        if (!$uv) { throw "Run install.cmd from '$project' to restore uv for .env loading." }
+        # Escape both path separators and whitespace for uv's env-file parser.
+        $envArgument = $envFile -replace '[\s\\]', '\$&'
+        $env:AGENT_COOK_UV = $uv
+        & $uv run --project $project --no-sync --env-file $envArgument $python -I @entry @words
     } else {
-        & $python @entry @words
+        & $python -I @entry @words
     }
     exit $LASTEXITCODE
 } catch {

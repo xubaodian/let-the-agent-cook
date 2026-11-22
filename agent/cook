@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+root=$(CDPATH='' cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 project="$root"
 managed="$root/.agent-cook/tools"
 uv_version=$(< "$project/.uv-version")
@@ -12,7 +12,7 @@ find_uv() {
     local candidate version major minor patch
     local required_major required_minor required_patch
     IFS=. read -r required_major required_minor required_patch <<< "$uv_version"
-    for candidate in "$managed/uv" "$root/../.agent-cook/tools/uv" "$(command -v uv || true)"; do
+    for candidate in "${AGENT_COOK_UV:-}" "$managed/uv" "$root/../.agent-cook/tools/uv" "$(command -v uv || true)"; do
         [[ -x "$candidate" ]] || continue
         version=$("$candidate" --version) || continue
         [[ "$version" =~ ^uv[[:space:]]+([0-9]+)\.([0-9]+)\.([0-9]+)([[:space:]]|$) ]] || continue
@@ -49,13 +49,16 @@ install_environment() {
         uv=$(find_uv) || { echo "Could not find uv after installation." >&2; exit 1; }
     fi
     echo "Installing Agent Cook with Python $(< "$project/.python-version") …" >&2
-    "$uv" sync --project "$project" --locked --python "$(< "$project/.python-version")" --extra examples --extra server --extra e2b
+    "$uv" sync --project "$project" --locked --python "$(< "$project/.python-version")" --extra examples --extra server --extra e2b || {
+        echo "Could not install the locked Python dependencies for '$project'. See the uv error above." >&2
+        return 1
+    }
     export AGENT_COOK_UV="$uv"
 }
 
 launch() {
     if [[ ! -x "$python" ]]; then
-        echo "Run ./install to set up Agent Cook." >&2
+        echo "Run bash ./install from '$project' to set up Agent Cook." >&2
         exit 1
     fi
     local config="$root/.env"
@@ -63,11 +66,19 @@ launch() {
         config="$root/../.env"
     fi
     if [[ -f "$config" ]]; then
-        local uv
-        uv=$(find_uv) || { echo "Run ./install to restore uv for .env loading." >&2; exit 1; }
-        exec "$uv" run --project "$project" --no-sync --env-file "$config" "$python" "$@"
+        local uv env_file
+        uv=$(find_uv) || { echo "Run bash ./install from '$project' to restore uv for .env loading." >&2; exit 1; }
+        # uv splits this option on whitespace even when the shell passes it as one argument.
+        env_file=$("$python" -I -c '
+import re
+import sys
+
+print(re.sub(r"[\s\\]", lambda match: "\\" + match[0], sys.argv[1]))
+' "$config")
+        export AGENT_COOK_UV="$uv"
+        exec "$uv" run --project "$project" --no-sync --env-file "$env_file" "$python" -I "$@"
     fi
-    exec "$python" "$@"
+    exec "$python" -I "$@"
 }
 
 case "${1:-}" in
@@ -78,13 +89,13 @@ case "${1:-}" in
             install_environment
             if [[ "${1:-}" == --global ]]; then
                 shift
-                exec "$python" -m agent_cook install-global "$@"
+                exec "$python" -I -m agent_cook install-global "$@"
             fi
             if [[ "${1:-}" == --with-office ]]; then
                 shift
-                "$python" -m agent_cook setup-runtime --with-office
+                "$python" -I -m agent_cook setup-runtime --with-office
             else
-                "$python" -m agent_cook setup-runtime
+                "$python" -I -m agent_cook setup-runtime
             fi
             launch -m agent_cook "$@"
         fi
@@ -96,7 +107,7 @@ case "${1:-}" in
         if [[ "${1:-}" == --docker ]]; then
             launch -m agent_cook docker
         else
-            "$python" -m agent_cook setup-runtime "$@"
+            "$python" -I -m agent_cook setup-runtime "$@"
         fi
         ;;
     run)

@@ -42,7 +42,7 @@ def source_command(project: Path, *args: str) -> list[str]:
             "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
             str(project / "cook.ps1"), *args,
         ]
-    return [str(project / "cook"), *args]
+    return ["bash", str(project / "cook"), *args]
 
 
 def main() -> int:

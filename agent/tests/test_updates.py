@@ -2,6 +2,7 @@ import io
 import json
 import os
 import shlex
+import shutil
 import sqlite3
 import stat
 import unittest
@@ -17,17 +18,17 @@ import httpx
 from agent_cook.cli import main
 from agent_cook.managed_launch import installed_revisions, version_lease
 from agent_cook.state.local import LocalSession, LocalSessions
-from agent_cook.updates import manage_source_install
+from agent_cook.updates import _register_path, manage_source_install
 
 
 class ManagedUpdateTest(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(TemporaryDirectory())).resolve()
-        self.install = self.root / "installed CLI"
-        self.input = self.root / "project folder"
+        self.install = self.root / "Agent Cook 安装"
+        self.input = self.root / "资料 文件夹"
         self.input.mkdir()
         (self.input / "selected file.txt").touch()
-        self.config = self.root / "agent-cook.json"
+        self.config = self.root / "用户 配置.json"
         self.config.write_text('{"api_keys":{"openrouter":"fixture-only"},"workspace_dir":"shared"}', encoding="utf-8")
         self.latest = "a" * 40
         self.downloads = []
@@ -91,13 +92,16 @@ exit 0
                 archive.writestr(prefix + "../../outside", "Invalid archive entry")
         return httpx.Response(200, content=bundle.getvalue())
 
-    def _launch(self, arguments: str = "probe"):
+    def _launch(self, arguments: str = "probe", *, stdin=None, env=None):
         if os.name == "nt":
             shim = self.install / "bin" / "agent-cook.cmd"
             command = f'"{os.environ["COMSPEC"]}" /d /s /c ""{shim}" {arguments}"'
         else:
             command = [str(self.install / "bin" / "agent-cook"), *shlex.split(arguments)]
-        process = run(command, cwd=self.input, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        process = run(
+            command, cwd=self.input, input=stdin, env=env,
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
         self.assertEqual(process.returncode, 0, process.stderr)
         return process.stdout.strip()
 
@@ -161,6 +165,36 @@ exit 0
         manage_source_install(install=True, config=self.config)
         self.assertEqual(json.loads(self._launch(f'--list-models --config "{self.config}"'))["chat"]["default"], "fixture/model")
         self.assertEqual(installed_revisions(self.install), (self.latest, None))
+        workspace = self.root / "输出 工作区"
+        (self.install / "versions/.env").write_text(
+            f'AGENT_COOK_WORKSPACE="{workspace.as_posix()}"\n', encoding="utf-8",
+        )
+        env = {**os.environ, "PYTHONHOME": str(self.root / "missing Python")}
+        env.pop("AGENT_COOK_WORKSPACE", None)
+        config = self._launch(f'--config "{self.config}"', stdin="/config\n/exit\n", env=env)
+        self.assertIn(f"Workspace  {workspace.resolve()}", config)
+
+
+class GlobalPathTest(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix" and shutil.which("zsh") and shutil.which("uv"), "Requires uv and zsh.")
+    def test_path_registration_quotes_a_spaced_install_in_a_new_zsh(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "Library/Application Support/Agent Cook's 安装"
+            launcher = root / "bin/agent-cook"
+            launcher.parent.mkdir(parents=True)
+            launcher.write_text("#!/bin/sh\nprintf 'ready\\n'\n", encoding="utf-8")
+            launcher.chmod(0o700)
+            profiles = Path(directory) / "shell profiles"
+            profiles.mkdir()
+            env = {**os.environ, "SHELL": shutil.which("zsh"), "ZDOTDIR": str(profiles)}
+            with patch.dict(os.environ, env), redirect_stdout(io.StringIO()) as messages:
+                _register_path(root, "a" * 40)
+            command = "Start now with "
+            direct = next(line.removeprefix(command) for line in messages.getvalue().splitlines() if line.startswith(command))
+            for launch in ("agent-cook", direct):
+                result = run([env["SHELL"], "-ilc", launch], env=env, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "ready")
 
 
 class LocalWorkspaceTest(unittest.TestCase):
