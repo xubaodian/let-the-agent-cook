@@ -10,6 +10,8 @@ from agent_cook.sandbox.limits import MAX_FILE_BYTES, MAX_RPC_BYTES, WORKER_VERS
 from agent_cook.sandbox.paths import workspace_path
 
 _READ_OPERATIONS = frozenset({"download", "list_files", "read_file", "search_files"})
+_LEGACY_COMMAND_LIMIT = 120
+_LEGACY_COMMAND_LIMIT_ERROR = "Command timeout must be between 0 and 120 seconds."
 
 
 class WorkerSandbox:
@@ -17,6 +19,7 @@ class WorkerSandbox:
 
     def __init__(self, exchange: Callable[[bytes, float], Awaitable[bytes]]) -> None:
         self._exchange = exchange
+        self._legacy_command_limit = False
 
     async def request(
         self, operation: str, arguments: dict[str, Any], *, timeout_seconds: float = 15
@@ -50,11 +53,18 @@ class WorkerSandbox:
     async def exec(
         self, argv: Sequence[str], *, cwd: str, timeout_seconds: float
     ) -> CommandResult:
-        result = await self.request(
-            "run_command",
-            {"argv": list(argv), "cwd": cwd, "timeout_seconds": timeout_seconds},
-            timeout_seconds=timeout_seconds + 10,
-        )
+        if self._legacy_command_limit:
+            timeout_seconds = min(timeout_seconds, _LEGACY_COMMAND_LIMIT)
+        arguments = {"argv": list(argv), "cwd": cwd, "timeout_seconds": timeout_seconds}
+        try:
+            result = await self.request("run_command", arguments, timeout_seconds=timeout_seconds + 10)
+        except SandboxError as error:
+            if timeout_seconds <= _LEGACY_COMMAND_LIMIT or str(error) != _LEGACY_COMMAND_LIMIT_ERROR:
+                raise
+            # Old images reject this value during validation, before starting the command.
+            self._legacy_command_limit = True
+            arguments["timeout_seconds"] = _LEGACY_COMMAND_LIMIT
+            result = await self.request("run_command", arguments, timeout_seconds=_LEGACY_COMMAND_LIMIT + 10)
         return CommandResult(
             exit_code=result["exit_code"],
             stdout=result["stdout"],

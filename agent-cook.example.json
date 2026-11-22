@@ -31,7 +31,6 @@
   },
   "run": {
     "context_window": 32768,
-    "max_turns": 8,
-    "timeout": 120
+    "max_turns": 300
   }
 }

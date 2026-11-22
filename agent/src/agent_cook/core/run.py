@@ -71,21 +71,9 @@ async def run_agent(
                     return sandbox
 
             tool_context = ToolContext(events.run_id, frozenset(spec.tool_names), get_sandbox, events, hook)
-            deadline = asyncio.timeout(spec.timeout_seconds)
-            try:
-                async with deadline:
-                    result = await run_loop(
-                        spec,
-                        session,
-                        model=model,
-                        tools=tools,
-                        tool_context=tool_context,
-                        events=events,
-                    )
-            except TimeoutError as error:
-                if deadline.expired():
-                    raise AgentRunError(f"The run exceeded {spec.timeout_seconds:g} seconds.") from error
-                raise
+            result = await run_loop(
+                spec, session, model=model, tools=tools, tool_context=tool_context, events=events,
+            )
     except asyncio.CancelledError:
         events.emit("run.cancelled")
         raise

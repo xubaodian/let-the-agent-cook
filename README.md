@@ -29,6 +29,8 @@ Agent Cook 是一个接入 OpenRouter 的终端助手。你可以用它对话、
 
 交互时用 `@路径` 或 `@"带空格的路径"` 选择文件或文件夹。Agent 处理副本，交付后会打印结果目录的路径。用 `/open` 打开当前会话的结果，`/model` 查看或切换模型，`/help` 查看其他命令。
 
+每个任务默认最多 **300 轮模型调用**，一次模型响应计一轮。用 `agent-cook --max-turns 500` 或 `agent-cook exec --max-turns 500 "任务"` 调整，也可在 `agent-cook.json` 中设置 `run.max_turns`，命令行参数优先。任务没有总执行时限。 [单次调用时限](docs/workspace-tools.md#输出与上限)
+
 默认可用 PPT、网站构建、数据分析、汇报材料、资料调研和视觉素材 6 个 Skill。需要 Studio 的工作流程时，可用 `agent-cook --plugin reporting-studio` 或 `agent-cook --plugin project-reporting-studio` 启动。 [Skill 和 Plugin 用法](docs/plugins.md)
 
 ## 使用示例

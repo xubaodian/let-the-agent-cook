@@ -68,7 +68,7 @@ class NativeDeliveryTest(unittest.TestCase):
             return turn
 
         with patch.dict(sys.modules, {"openai": sdk(AsyncMock(side_effect=create))}):
-            args = ["-C", str(self.root), "--timeout", "300", "--max-turns", "12"]
+            args = ["-C", str(self.root), "--max-turns", "12"]
             if interactive:
                 with patch("sys.stdin", io.StringIO(f'Process @"{_FOLDER}".\n/open\n/exit\n')):
                     return main(args)

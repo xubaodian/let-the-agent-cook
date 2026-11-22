@@ -21,7 +21,7 @@ flowchart TD
 
 | 调用 | 自动重试行为 |
 |---|---|
-| Chat Completions 和 Responses | 连接错误、请求超时及 SDK 认定可重试的 HTTP 错误最多再试两次，使用 SDK 退避。单次请求设置独立超时，运行阶段仍受 `--timeout` 限制。 |
+| Chat Completions 和 Responses | 连接错误、请求超时及 SDK 认定可重试的 HTTP 错误最多再试两次，使用 SDK 退避。一次模型调用连同重试最多 5 分钟，HTTP 读写的空闲超时为 3 分钟。 |
 | 生图 | 服务明确限流并返回 HTTP 429 时最多再试两次。提供 `Retry-After` 时遵循该等待时间。收到回执前断线或超时可能已经出图，当前调用返回错误。 |
 | Docker | 本机 daemon 探测、容器启动和回收遇到瞬时传输错误时最多再试两次。启动重试前先清理同名的部分启动容器。 |
 | E2B | 创建请求明确被拒绝或连接尚未建立时可重试。对单个租约可重试传输请求文件、取回响应和回收租约。 |
@@ -98,7 +98,7 @@ uv run --project agent agent-cook --skills-dir /path/to/skills \
 比例和分辨率沿用所选模型的默认值，除非调用时显式指定。工具用实际图片格式确定扩展名，支持 PNG、JPEG 和 WebP，单张图片最多 16 MiB。可以用返回的 `path` 将图片放进网页，也可以用 `submit_results` 导出。
 
 ```bash
-uv run --project agent agent-cook --timeout 240 \
+uv run --project agent agent-cook \
   --model 'provider/chat-model' \
   --image-model bytedance-seed/seedream-4.5 \
   '生成一张 16:9 的深蓝色城市夜景，用 submit_results 交付图片。'
@@ -144,7 +144,7 @@ export E2B_TEMPLATE='agent-cook'
 uv run --project agent --extra e2b --extra server agent-cook serve --sandbox e2b
 ```
 
-远程后端同样在首次工具调用时创建，Run 退出时关闭。E2B 公网入口采用访问令牌保护，两种后端默认关闭任务出网。模型和 E2B 的 API Key 由宿主进程使用。[E2B 模板构建说明](https://e2b.dev/resources/introducing-build-system-2-0)
+远程后端同样在首次工具调用时创建，Run 退出时关闭。Agent Cook 在任务运行期间续期 E2B 租约，沙箱总存续时间仍受 E2B 套餐约束。E2B 公网入口采用访问令牌保护，两种后端默认关闭任务出网。模型和 E2B 的 API Key 由宿主进程使用。 [E2B 模板构建说明](https://e2b.dev/resources/introducing-build-system-2-0) · [E2B 套餐限制](https://e2b.dev/pricing)
 
 ## 输出与上限
 
@@ -152,4 +152,5 @@ CLI 在标准错误打印 trace 和产物路径。`artifact.created` 事件的�
 
 - 单个输入或产物文件上限 16 MiB。单次输入或产物批次上限 32 MiB。
 - `read_file` 面向不超过 1 MiB 的文本文件，按行范围与返回长度分页。大型文件可以在沙箱内用 `run_command` 处理。
-- `run_command` 默认 30 秒，单条最多 120 秒，stdout 和 stderr 各保留至 16 KiB。CLI 的 `--timeout` 管整个 Run。
+- `run_command` 默认 3 分钟，单条最多 5 分钟，stdout 和 stderr 各保留至 16 KiB。旧版 Docker 镜像和 E2B 模板使用原有的 120 秒命令上限，更新工作区镜像后启用新上限。
+- 每个任务默认最多 300 轮模型调用，一次模型响应计一轮，同一响应可包含多个工具调用。可用 `--max-turns` 或 `run.max_turns` 调整，命令行参数优先。达到上限且尚未完成的任务报错结束。任务没有总执行时限。

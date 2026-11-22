@@ -6,6 +6,7 @@ from functools import partial
 from math import isfinite
 from typing import TYPE_CHECKING
 
+from agent_cook.model.client import ModelCallTimeout, model_call_deadline
 from agent_cook.retry import retry_transient
 from agent_cook.sandbox.limits import MAX_FILE_BYTES
 
@@ -42,12 +43,13 @@ class OpenRouterImageGenerator:
             body["resolution"] = resolution
 
         try:
-            response = await retry_transient(
-                partial(self._client.post, "/images", cast_to=object, body=body),
-                lambda error: isinstance(error, APIStatusError) and error.status_code == 429,
-                retry_after=_retry_after,
-            )
-        except APITimeoutError as error:
+            async with model_call_deadline():
+                response = await retry_transient(
+                    partial(self._client.post, "/images", cast_to=object, body=body),
+                    lambda error: isinstance(error, APIStatusError) and error.status_code == 429,
+                    retry_after=_retry_after,
+                )
+        except (APITimeoutError, ModelCallTimeout) as error:
             raise ImageGenerationError("OpenRouter image generation timed out.") from error
         except APIConnectionError as error:
             raise ImageGenerationError("Could not reach OpenRouter for image generation.") from error

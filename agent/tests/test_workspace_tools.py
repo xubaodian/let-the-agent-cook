@@ -239,6 +239,18 @@ class WorkspaceToolTest(unittest.IsolatedAsyncioTestCase):
         artifacts = await exporter.export(self.sandbox, ["valid.txt"])
         self.assertEqual((self.directory / artifacts[0].path).read_bytes(), b"valid")
 
+    async def test_run_command_accepts_the_new_timeouts(self):
+        registry, names = workspace_tools(ArtifactExporter(self.directory / "artifacts"))
+        context = ToolContext("command-timeout", frozenset(names), AsyncMock(return_value=self.sandbox))
+        argv = [sys.executable, "-c", "print('ready')"]
+        with patch.object(self.sandbox, "exec", wraps=self.sandbox.exec) as execute:
+            for options, expected in (({}, 180), ({"timeout_seconds": 300}, 300)):
+                payload = json.dumps({"argv": argv, **options})
+                result = await registry.invoke(ToolCall("command", "run_command", payload), context)
+                self.assertFalse(result.is_error, result.model_content)
+                execute.assert_awaited_with(argv, cwd=".", timeout_seconds=expected)
+            self.assertEqual(execute.await_count, 2)
+
     async def test_commands_have_output_and_time_limits_and_do_not_inherit_model_keys(self):
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "fixture-key"}):
             output = await self.sandbox.exec(

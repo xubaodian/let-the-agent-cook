@@ -2,7 +2,6 @@
 name: data-reviewer
 description: Reconcile the proposed report metrics with source rows and identify gaps in benchmarks or coverage.
 tools: [ls, read_file, search_files]
-max_model_turns: 5
 ---
 
 # Review the reported numbers

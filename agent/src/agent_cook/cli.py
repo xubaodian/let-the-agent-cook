@@ -8,7 +8,6 @@ from collections.abc import Callable
 from dataclasses import asdict, replace
 from functools import partial
 from importlib.util import find_spec
-from math import ceil
 from pathlib import Path
 from shutil import copytree
 from subprocess import run
@@ -16,7 +15,7 @@ from tempfile import mkdtemp
 from uuid import uuid4
 
 from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
-from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
+from agent_cook.core.types import DEFAULT_MAX_MODEL_TURNS, AgentRunError, AgentSpec, RunResult
 from agent_cook.delivery import publish_results, result_snapshots
 from agent_cook.events.journal import RunEvents, write_jsonl
 from agent_cook.extensions.plugins import bundled_plugins, load_plugins, plugin_path
@@ -111,7 +110,7 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
         getattr(args, "session_image_model", None) or catalog.image.default,
     )
     spec = AgentSpec(
-        model=chat_model, max_model_turns=args.max_turns, timeout_seconds=args.timeout,
+        model=chat_model, max_model_turns=args.max_turns,
         context_policy=replace(DEFAULT_CONTEXT_POLICY, context_window=args.context_window),
         require_submission=False if args.sandbox == "native" else None,
     )
@@ -128,7 +127,6 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
             E2BSandboxFactory,
             args.config.e2b_template,
             api_key=key,
-            lifetime_seconds=ceil(spec.timeout_seconds) + 60,
         )
     factory = NativeSandboxFactory() if args.sandbox == "native" else (
         make_sandbox(allow_network=args.sandbox_network) if make_sandbox else None
@@ -210,8 +208,10 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument(
         "--context-window", type=int, help="Context window in tokens for the selected model",
     )
-    parser.add_argument("--max-turns", type=int, help="Maximum number of model turns")
-    parser.add_argument("--timeout", type=float, help="Run time limit in seconds")
+    parser.add_argument(
+        "--max-turns", type=int,
+        help=f"Maximum model turns per task (default: {DEFAULT_MAX_MODEL_TURNS}, configurable via run.max_turns)",
+    )
     return parser
 
 
@@ -251,9 +251,10 @@ def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCat
     elif args.sandbox in ("docker", "e2b"):
         # Docker-era user settings are still useful to serve. Local tasks use native isolation.
         args.sandbox = "native"
-    for name, default in (("context_window", DEFAULT_CONTEXT_POLICY.context_window), ("max_turns", 8), ("timeout", 120)):
-        if getattr(args, name) is None:
-            setattr(args, name, config.run.get(name, default))
+    if args.context_window is None:
+        args.context_window = config.run.get("context_window", DEFAULT_CONTEXT_POLICY.context_window)
+    if args.max_turns is None:
+        args.max_turns = config.run.get("max_turns", DEFAULT_MAX_MODEL_TURNS)
     if mode == "serve":
         for name, default in (("host", "127.0.0.1"), ("port", 8000), ("concurrency", 1)):
             if getattr(args, name) is None:

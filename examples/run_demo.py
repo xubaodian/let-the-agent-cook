@@ -50,10 +50,7 @@ def demo() -> int:
     name = parser.parse_args().name
     if name == "event-registration":
         parser.error("Run event-registration with the HTTP service to exercise the mock API. See examples/README.md.")
-    args = [
-        "exec", "--request", str(EXAMPLES / name / "run.json"),
-        "--max-turns", "24", "--timeout", "300",
-    ]
+    args = ["exec", "--request", str(EXAMPLES / name / "run.json")]
     if name == "combined-review":
         with reference_server():
             return main(args)

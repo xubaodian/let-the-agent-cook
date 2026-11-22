@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory, TemporaryFile
 from time import monotonic
 from typing import Any
 
-from agent_cook.sandbox.limits import MAX_COMMAND_OUTPUT, MAX_COMMAND_SECONDS
+from agent_cook.sandbox.limits import DEFAULT_COMMAND_SECONDS, MAX_COMMAND_OUTPUT, MAX_COMMAND_SECONDS
 from agent_cook.sandbox.worker.workspace import Workspace
 
 _ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "PLAYWRIGHT_BROWSERS_PATH", "MPLBACKEND")
@@ -54,7 +54,7 @@ def stop(process: subprocess.Popen[bytes]) -> None:
 
 
 def run_command(
-    workspace: Workspace, argv: list[str], cwd: str = ".", timeout_seconds: float = 30,
+    workspace: Workspace, argv: list[str], cwd: str = ".", timeout_seconds: float = DEFAULT_COMMAND_SECONDS,
     *, input_text: str | None = None,
 ) -> dict[str, Any]:
     if not 0 < timeout_seconds <= MAX_COMMAND_SECONDS:

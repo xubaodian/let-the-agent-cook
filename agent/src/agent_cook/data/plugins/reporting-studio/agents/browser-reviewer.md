@@ -2,7 +2,6 @@
 name: browser-reviewer
 description: Independently verify a workspace site's key interactions and capture a current screenshot.
 tools: [ls, read_file, playwright]
-max_model_turns: 6
 ---
 
 # Review the site
