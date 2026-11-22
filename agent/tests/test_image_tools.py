@@ -120,7 +120,11 @@ class ImageCliTest(unittest.TestCase):
         self.assertEqual(factory.closed, 1)
         first_request = create.call_args_list[0].kwargs
         self.assertEqual(first_request["model"], "fixture/chat")
-        self.assertIn("generate_image", [tool["function"]["name"] for tool in first_request["tools"]])
+        tools = {tool["function"]["name"]: tool["function"] for tool in first_request["tools"]}
+        self.assertIn("website hero", tools["generate_image"]["description"])
+        self.assertIn("PowerPoint cover", tools["generate_image"]["description"])
+        catalog = json.loads(first_request["messages"][0]["content"].splitlines()[-1])
+        self.assertTrue({"image-assets", "pptx", "static-site"} <= {skill["name"] for skill in catalog})
         client.with_options.assert_called_once_with(max_retries=0)
         post.assert_awaited_once_with("/images", cast_to=object, body={
             "model": "fixture/image", "prompt": arguments["prompt"],

@@ -45,9 +45,10 @@ def register_delegate(
             if name in context.allowed_tools and name != DELEGATE_TOOL
         )
         model_id = profile.model or parent.model
+        limits = (parent.max_model_turns, profile.max_model_turns)
         spec = AgentSpec(
             model=model_id, instructions=profile.instructions, tool_names=names,
-            max_model_turns=min(parent.max_model_turns, profile.max_model_turns),
+            max_model_turns=min((limit for limit in limits if limit is not None), default=None),
             context_policy=parent.context_policy if model_id == parent.model else DEFAULT_CONTEXT_POLICY,
             require_submission=False,
         )

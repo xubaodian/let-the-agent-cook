@@ -10,7 +10,7 @@ class AgentSpec:
     model: str
     instructions: str = ""
     tool_names: tuple[str, ...] = ()
-    max_model_turns: int = 8
+    max_model_turns: int | None = None
     context_policy: ContextPolicy = DEFAULT_CONTEXT_POLICY
     require_submission: bool | None = None
     web_enabled: bool = False
@@ -18,8 +18,8 @@ class AgentSpec:
     def __post_init__(self) -> None:
         if not self.model.strip():
             raise ValueError("A model ID is required.")
-        if self.max_model_turns < 1:
-            raise ValueError("The model turn limit must be positive.")
+        if self.max_model_turns is not None and (type(self.max_model_turns) is not int or self.max_model_turns < 1):
+            raise ValueError("The model turn limit must be a positive integer.")
         if len(set(self.tool_names)) != len(self.tool_names):
             raise ValueError("Each tool can be enabled only once per agent.")
 
@@ -31,7 +31,7 @@ class SubagentSpec:
     instructions: str
     tool_names: tuple[str, ...] = ()
     model: str | None = None
-    max_model_turns: int = 4
+    max_model_turns: int | None = None
     timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
@@ -39,8 +39,8 @@ class SubagentSpec:
             raise ValueError("A subagent requires a name, description, and instructions.")
         if self.model is not None and not self.model.strip():
             raise ValueError("A subagent model ID must contain text.")
-        if self.max_model_turns < 1:
-            raise ValueError("The subagent turn limit must be positive.")
+        if self.max_model_turns is not None and (type(self.max_model_turns) is not int or self.max_model_turns < 1):
+            raise ValueError("The subagent turn limit must be a positive integer.")
         if self.timeout_seconds is not None and (not isfinite(self.timeout_seconds) or self.timeout_seconds <= 0):
             raise ValueError("The delegate timeout must be a positive, finite duration.")
         if len(set(self.tool_names)) != len(self.tool_names):

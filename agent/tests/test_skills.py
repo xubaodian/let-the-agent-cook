@@ -81,7 +81,7 @@ class SkillTest(unittest.TestCase):
         ):
             status = main([
                 "--sandbox", "native", "--trace", str(self.root / "trace.jsonl"),
-                "--skills-dir", str(self.skills), "Read the example skill",
+                "--skills-dir", str(self.skills), "--skill", "example", "Read the example skill",
             ])
 
         self.assertEqual(status, 0, stderr.getvalue())

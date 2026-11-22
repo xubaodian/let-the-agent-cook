@@ -246,11 +246,31 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
             patch.object(loop, "slow_callback_duration", 3600),
         ):
             result = await run_agent(
-                AgentSpec("fixture/model", tool_names=("fixture",), max_model_turns=12),
+                AgentSpec("fixture/model", tool_names=("fixture",)),
                 "Complete the long task", model=model, tools=registry,
             )
         self.assertEqual(elapsed, 3000)
         self.assertEqual(result.text, "Done.")
+        self.assertEqual(model.next_turn.await_count, 11)
+
+    async def test_default_subagent_can_use_more_than_four_turns(self):
+        registry = ToolRegistry()
+        handler = AsyncMock(return_value=ToolResult("Checked."))
+        registry.register(tool_definition(), handler)
+        model = ScriptedModel(
+            tool_turn(ToolCall("delegate-call", "delegate", '{"agent":"reviewer","task":"Check this"}')),
+            *(tool_turn(ToolCall(f"check-{index}", "fixture", '{"value":"work"}')) for index in range(5)),
+            ModelTurn(Message("assistant", "All checks complete."), "stop"),
+            ModelTurn(Message("assistant", "Done."), "stop"),
+        )
+        result = await run_agent(
+            AgentSpec("fixture/model", tool_names=("fixture",)), "Review",
+            model=model, tools=registry,
+            subagents=(SubagentSpec("reviewer", "Reviews content.", "Review only.", ("fixture",)),),
+        )
+        self.assertEqual(result.text, "Done.")
+        self.assertEqual(handler.await_count, 5)
+        self.assertEqual(model.next_turn.call_args.kwargs["messages"][-1].content, "All checks complete.")
 
     async def test_subagent_timeout_returns_an_error_to_the_parent(self):
         model = AsyncMock()

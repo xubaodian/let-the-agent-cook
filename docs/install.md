@@ -53,7 +53,7 @@ sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 
 用 `--config /path/to/agent-cook.json` 显式使用另一份配置。原有环境变量仍可覆盖配置，其来源会在 `/config` 和 `/key` 中显示。已有 OpenRouter 系统凭据和旧版 `settings.json` 仍可读取。手动编辑后重启即可加载更改。
 
-任务按模型轮次运行，可用 `--max-turns` 或 `run.max_turns` 调整轮次上限。旧版的任务总时限 `--timeout` 已移除，旧配置中的 `run.timeout` 可删除。 [单次调用时限](workspace-tools.md#输出与上限)
+任务默认没有总时限或轮次上限。需要控制模型轮次时，用 `--max-turns` 或 `run.max_turns` 显式设置。使用过旧版示例配置的用户可删除 `run.max_turns` 以采用新默认。旧配置中的 `run.timeout` 现已忽略。 [单次调用时限](workspace-tools.md#输出与上限)
 
 ### 模型配置
 

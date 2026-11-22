@@ -1,32 +1,55 @@
 # Plugin 和任务扩展
 
-任务请求决定本次运行启用哪些 Plugin、挂载哪些 Skill，以及向模型开放哪些 MCP 工具。`RunRequest.parse()` 也可以用于接受 JSON 对象的宿主入口。
+启用工作区时，Agent Cook 会挂载 6 个内置 Skill。首轮只提供名称、描述和入口，Agent 按任务读取相应的 `SKILL.md`。如果输入占用了同名路径，Agent Cook 会保留输入原路径，并为内置 Skill 选择一个空闲目录。
+
+| Skill | 用途 |
+| --- | --- |
+| `pptx` | 制作和检查可编辑的 PowerPoint。 |
+| `static-site` | 构建网站、预览交互并保存截图。 |
+| `data-analysis` | 清洗和核对数据、计算指标及生成 Excel。 |
+| `brief` | 整理简报、项目进展与交付材料。 |
+| `research-synthesis` | 检索资料、追溯来源并汇总证据。 |
+| `image-assets` | 规划、生成并检查网站及 PPT 的配图。 |
+
+## 启用 Studio
+
+用 `--plugin` 显式启用 Studio。普通启动载入上述 Skill，Plugin 由本次命令或任务请求选择。
+
+```bash
+./cook --list-plugins
+./cook --plugin reporting-studio
+./cook --plugin project-reporting-studio
+```
+
+Windows 源码使用 `.\cook.cmd`，已在终端安装 CLI 时使用 `agent-cook`。也可在 `exec` 后传入 `--plugin`，为单次任务启用。
+
+| Studio | 工作流程 | 引用的 Skill |
+| --- | --- | --- |
+| `reporting-studio` | 通用报告、PPT 和网站交付，提供网站模板与浏览器复核。 | PPT、网站、数据、汇报、调研和配图。 |
+| `project-reporting-studio` | 项目进度、风险、决策和下一步，提供数据复核与提交检查。 | `pptx`、`data-analysis`、`brief`。 |
+
+两套 Studio 共用 Skill 文件。示例 MCP 通过 `--mcp-tool` 或任务的 `mcp_tools` 显式选用。 [带数据和浏览器验证的示例](../examples/README.md)
+
+## 任务请求
 
 ```json
 {
   "schema_version": 1,
-  "task": "用项目数据生成简报，复核关键数字后提交",
-  "model": "provider/chat-model",
-  "plugins": ["./plugins/reporting"],
-  "skills": ["brief"],
-  "mcp_tools": ["project-data/lookup"]
+  "task": "梳理项目进展，整理风险、待决策事项和下一步，生成可编辑 PPT",
+  "plugins": ["project-reporting-studio"]
 }
 ```
 
-文件里的相对目录从请求文件的目录解析。用 `--request run.json` 读取任务，通过 `--sandbox` 和 `--input` 配置沙箱与输入文件。任务可用 `model` 选择对话模型，用 `image_model` 选择生图模型。命令行参数可以覆盖两项选择。[模型配置](install.md#模型配置)
+用 `./cook exec --request run.json` 执行。可以传入 `--input` 添加资料。任务可用 `model` 选择对话模型，用 `image_model` 选择生图模型。也可用 `RunRequest.parse()` 从代码接收请求。 [模型配置](install.md#模型配置)
 
-```bash
-uv run --project agent agent-cook --sandbox docker --request run.json
-```
+| 字段 | 用途 |
+| --- | --- |
+| `plugins` | 内置名称或插件目录。相对目录以请求文件的位置为基准。 |
+| `skill_directories` | 加入自定义 Skill 目录，同名自定义 Skill 优先于内置版。 |
+| `skills` | 省略时挂载全部发现的 Skill。给出数组时，挂载所列 Skill 和启用的 Plugin 引用的 Skill。 |
+| `mcp_tools` | 选择 `server/tool`。空数组跳过插件 MCP 连接。 |
 
-| 字段 | 填写内容 | 作用 |
-|---|---|---|
-| `skills` | Skill 名称，例如 `brief` | 用同一份名单构建模型目录并挂载到工作区 |
-| `mcp_tools` | `server/tool`，例如 `project-data/lookup` | 只连接名单涉及的服务器，向模型注册所列工具 |
-
-两个数组省略时使用对应的全部发现项，`[]` 表示选零个。`mcp_tools` 为 `[]` 时跳过 MCP 服务连接。填写未知的 Skill 或 MCP 工具名称会报错。独立的 Skill 包目录可通过 `skill_directories` 指定，例如 `["./my-skills"]`。
-
-命令行也可以用 `--plugin ./plugins/reporting`、`--skill brief` 和 `--mcp-tool project-data/lookup`，这些参数都可重复。工作区第一次打开时复制选中的包和插件文件，模型起始上下文只包含 Skill 的名称、描述和入口。`extensions.loaded` 记录启用的插件、Skill 和注册到模型的 MCP 工具名，例如 `mcp__project-data__lookup`。
+命令行中可以重复使用 `--plugin`、`--skills-dir`、`--skill` 和 `--mcp-tool`。工作区首次打开时复制已选的包和插件文件。`extensions.loaded` 记录启用的 Plugin、Skill 和注册的 MCP 工具。
 
 ## 插件目录
 
@@ -35,23 +58,31 @@ uv run --project agent agent-cook --sandbox docker --request run.json
 ```json
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "reporting",
-  "version": "0.1.0"
+  "name": "team-reporting",
+  "version": "0.1.0",
+  "extensions": {
+    "com.github.xubaodian.agent-cook": {
+      "skills": ["brief", "pptx"],
+      "instructions": "核对数据及来源后再提交团队汇报。"
+    }
+  }
 }
 ```
 
 | 插件路径 | 用途 |
 |---|---|
-| `plugin.json` | 根清单，提供插件身份 |
-| `skills/brief/SKILL.md` | 发现 `brief`，选中后在工作区通过 `brief/SKILL.md` 访问 |
+| `plugin.json` | 根清单。Agent Cook 扩展可按名称引用已发现的 Skill，并提供工作流程指令。 |
+| `skills/custom/SKILL.md` | 可选的插件专属 Skill。选中后可从工作区的 `custom/SKILL.md` 读取。 |
 | `assets/` | 复制插件资产，按 `assets/...` 工作区路径访问 |
 | `agents/*.md` | 配置插件可提供的子 Agent |
 | `hooks/hooks.json` | 定义工具 Hook 和包内脚本的路径 |
 | `mcp.json` | 声明插件要连接的 MCP 服务 |
 
+MCP 服务随插件启用时自动连接。将 Agent Cook 扩展中的 `connect_mcp_by_default` 设为 `false`，即可改用 `mcp_tools` 或 `--mcp-tool` 选择该插件的服务工具。
+
 ## 子 Agent
 
-`agents/data-reviewer.md` 的 frontmatter 声明角色，正文是子 Agent 的指令。`model` 省略或为 `inherit` 时使用父 Agent 模型。`max_model_turns` 受父任务轮次限制。可用 `timeout_seconds` 显式限制一次 `delegate` 调用。
+`agents/data-reviewer.md` 的 frontmatter 声明角色，正文是子 Agent 的指令。`model` 省略或为 `inherit` 时使用父 Agent 模型。父任务或角色可显式设置轮次上限，两者都设置时取较小值。角色也可用 `timeout_seconds` 显式限制一次 `delegate` 调用。
 
 ```markdown
 ---

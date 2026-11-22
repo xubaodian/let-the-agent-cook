@@ -108,10 +108,11 @@ class ExamplePluginsTest(unittest.TestCase):
     def test_catalog_discovers_bundled_skills_without_package_collisions(self):
         request = RunRequest.from_file(ROOT / "examples/combined-review/run.json")
         plugins = load_plugins(request.plugins)
-        catalog = SkillCatalog((*request.skill_directories, *(plugin.skills_dir for plugin in plugins)))
+        self.assertTrue(all(plugin.skills_dir is None for plugin in plugins))
+        referenced = tuple(name for plugin in plugins for name in plugin.skill_refs)
+        catalog = SkillCatalog((), include_bundled=True, required=referenced)
         self.assertEqual(set(catalog.names), {
-            "data-analysis", "research-synthesis", "i18n-review",
-            "spreadsheet", "brief", "pptx", "static-site", "browser-qa", "image-assets",
+            "data-analysis", "research-synthesis", "brief", "pptx", "static-site", "image-assets",
         })
         staged = catalog.workspace_files({}, extra_trees=tuple(tree for plugin in plugins for tree in plugin.files))
         self.assertTrue(all(f"{name}/SKILL.md" in staged for name in catalog.names))
@@ -129,7 +130,7 @@ class ExamplePluginsTest(unittest.TestCase):
         self._check_report(files)
         child = next(event for event in events if event["data"].get("agent") == "data-reviewer")
         self.assertEqual(child["parent_run_id"], events[0]["run_id"])
-        self._assert_block(events, "reporting-studio", "incomplete")
+        self._assert_block(events, "project-reporting-studio", "incomplete")
 
     def test_registration_verifies_api_flows_and_requires_a_fresh_screenshot(self):
         browser = self._browser_executable()
@@ -147,7 +148,7 @@ class ExamplePluginsTest(unittest.TestCase):
         self.assertEqual(proof["tool_call_id"], "current-preview")
         child = next(event for event in events if event["data"].get("agent") == "browser-reviewer")
         self.assertEqual(child["parent_run_id"], events[0]["run_id"])
-        self._assert_block(events, "web-studio", "stale")
+        self._assert_block(events, "reporting-studio", "stale")
 
     def test_two_plugins_share_metrics_and_resume_after_compaction(self):
         self._require_office_tools()
@@ -163,7 +164,7 @@ class ExamplePluginsTest(unittest.TestCase):
             event["data"]["plugin"] for event in events if event["type"] == "hook.finished"
             and event["data"]["tool_call_id"] == "submit" and not event["data"]["is_error"]
         }
-        self.assertEqual(checked, {"reporting-studio", "web-studio"})
+        self.assertEqual(checked, {"reporting-studio", "project-reporting-studio"})
 
     def _run_case(self, name, script, delegates=None, *, browser=None):
         if find_spec("mcp") is None:
@@ -241,10 +242,9 @@ class ExamplePluginsTest(unittest.TestCase):
             if "reference-library/search" in request.mcp_tools:
                 environment["ALL_PROXY"] = "socks5h://127.0.0.1:9"
                 document = json.loads(source.read_text(encoding="utf-8"))
-                document["skill_directories"] = [str(path.resolve()) for path in request.skill_directories]
                 document["plugins"] = [
                     str(resources.enter_context(_reference_plugin(self.root, path.resolve())))
-                    if path.name == "web-studio" else str(path.resolve())
+                    if path.name == "reporting-studio" else str(path.resolve())
                     for path in request.plugins
                 ]
                 source = self.root / "request.json"
@@ -327,9 +327,9 @@ class ExamplePluginsTest(unittest.TestCase):
     def _registration(self, port):
         result = yield _turn(
             _tool("rules", "mcp__reference-library__search", query="registration", locale="en", include_archived=True),
-            _tool("browser-skill", "read_file", path="browser-qa/SKILL.md"),
+            _tool("browser-skill", "read_file", path="static-site/SKILL.md"),
         )
-        self.assertIn("# Browser QA", result["browser-skill"]["content"])
+        self.assertIn("# Site construction", result["browser-skill"]["content"])
         hits = result["rules"]["hits"]
         self.assertEqual({hit["version"] for hit in hits if hit["id"] == "registration-rules"}, {1, 2})
         rules = next(hit for hit in hits if hit["id"] == "registration-rules" and hit["current"])

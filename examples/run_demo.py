@@ -7,6 +7,7 @@ from socket import create_connection
 from time import monotonic, sleep
 
 from agent_cook.cli import main
+from agent_cook.settings import DATA
 
 EXAMPLES = Path(__file__).resolve().parent
 
@@ -21,7 +22,7 @@ def reference_server():
     else:
         yield
         return
-    script = EXAMPLES.parent / "plugins" / "web-studio" / "mcp" / "server.py"
+    script = DATA / "plugins/reporting-studio/mcp/server.py"
     with subprocess.Popen([sys.executable, str(script)], stdin=subprocess.DEVNULL) as service:
         try:
             deadline = monotonic() + 10
@@ -49,10 +50,7 @@ def demo() -> int:
     name = parser.parse_args().name
     if name == "event-registration":
         parser.error("Run event-registration with the HTTP service to exercise the mock API. See examples/README.md.")
-    args = [
-        "exec", "--request", str(EXAMPLES / name / "run.json"),
-        "--max-turns", "24",
-    ]
+    args = ["exec", "--request", str(EXAMPLES / name / "run.json")]
     if name == "combined-review":
         with reference_server():
             return main(args)

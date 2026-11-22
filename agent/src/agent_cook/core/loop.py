@@ -36,7 +36,9 @@ async def run_loop(
     delivery_artifacts: set[str] = set()
     needs_submission = require_submission
 
-    for turn_number in range(1, spec.max_model_turns + 1):
+    turn_number = 0
+    while True:
+        turn_number += 1
         try:
             messages = await prepare_context(
                 instructions, session, policy=spec.context_policy, budget=budget,
@@ -124,5 +126,3 @@ async def run_loop(
                     events.emit("artifact.created", tool_call_id=call.id, artifact=asdict(artifact))
             if result.ui is not None:
                 events.emit("ui.attached", tool_call_id=call.id, attachment=asdict(result.ui))
-
-    raise AgentRunError("The model turn budget was exhausted.")

@@ -65,6 +65,18 @@ class ModelCatalogTest(unittest.TestCase):
                 self.assertEqual(run.await_args.kwargs["model_api"], "responses")
                 factory.assert_called_once_with()
 
+    def test_legacy_timeout_config_leaves_the_default_turn_budget_unset(self):
+        with TemporaryDirectory() as directory:
+            config = Path(directory) / "config.json"
+            config.write_text(json.dumps({"run": {"timeout": 120}}), encoding="utf-8")
+            with (
+                patch.dict(os.environ, {"OPENROUTER_API_KEY": "fixture-key", "OPENROUTER_MODEL": "fixture/model"}, clear=True),
+                patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=RunResult("run", "Done.")) as run,
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(main(["exec", "-C", directory, "--config", str(config), "Check."]), 0)
+            self.assertIsNone(run.await_args.args[0].max_model_turns)
+
     def test_list_models_has_no_defaults_without_user_configuration(self):
         with patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(main(["--list-models"]), 0)
