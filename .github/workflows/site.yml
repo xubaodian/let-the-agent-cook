@@ -37,6 +37,11 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: site/package-lock.json
+      - name: Resolve Node 24 types for the test toolchain
+        run: npm install --save-dev --package-lock-only '@types/node@^24'
+      - name: Capture the updated dependency lock
+        run: |
+          gzip -c package-lock.json | base64 -w 960 | sed 's/^/SITE_LOCK_CHUNK /'
       - run: npm ci
       - run: npm run check
       - run: npm run build
