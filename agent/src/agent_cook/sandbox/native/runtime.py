@@ -39,10 +39,9 @@ def uv_executable() -> str | None:
     name = "uv.exe" if sys.platform == "win32" else "uv"
     configured = os.environ.get("AGENT_COOK_UV")
     source = Path(__file__).resolve().parents[4]
-    managed = source.parent / ".agent-cook/tools" / name
     candidates = (Path(configured) if configured else None, DATA / "native" / name)
     if (source / "uv.lock").is_file():
-        candidates += (managed,)
+        candidates += tuple(project / ".agent-cook/tools" / name for project in (source, source.parent))
     for path in candidates:
         if path is not None and path.is_file():
             return str(path.resolve())

@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$project = Join-Path $root "agent"
+$project = $root
 $managed = Join-Path $root ".agent-cook\tools"
 $uvVersion = (Get-Content -LiteralPath (Join-Path $project ".uv-version") -Raw).Trim()
 $env:UV_PROJECT_ENVIRONMENT = Join-Path $project ".venv"
@@ -8,7 +8,8 @@ $python = Join-Path $env:UV_PROJECT_ENVIRONMENT "Scripts\python.exe"
 
 function Find-Uv {
     $onPath = Get-Command uv.exe -CommandType Application -ErrorAction SilentlyContinue
-    foreach ($candidate in @((Join-Path $managed "uv.exe"), $onPath.Source)) {
+    $previous = Join-Path (Split-Path $root -Parent) ".agent-cook\tools\uv.exe"
+    foreach ($candidate in @((Join-Path $managed "uv.exe"), $previous, $onPath.Source)) {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
             $version = & $candidate --version
             if ($LASTEXITCODE -eq 0 -and $version -match '^uv\s+(\d+\.\d+\.\d+)(\s|$)') {
@@ -88,6 +89,9 @@ try {
         $entry = @((Join-Path $root "examples\run_demo.py"))
     }
     $envFile = Join-Path $root ".env"
+    if (!(Test-Path -LiteralPath $envFile -PathType Leaf)) {
+        $envFile = Join-Path (Split-Path $root -Parent) ".env"
+    }
     if (Test-Path -LiteralPath $envFile -PathType Leaf) {
         $uv = Find-Uv
         if (!$uv) { throw "Run install.cmd to restore uv for .env loading." }

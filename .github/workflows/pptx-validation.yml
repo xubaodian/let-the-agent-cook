@@ -4,8 +4,6 @@ on:
   pull_request:
     paths:
       - 'agent/**'
-      - 'sandbox/**'
-      - 'examples/pptx_validation.py'
       - '.github/workflows/pptx-validation.yml'
   workflow_dispatch:
 
@@ -16,6 +14,9 @@ jobs:
   live-pptx:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: agent
     timeout-minutes: 25
     steps:
       - name: Check for the opt-in OpenRouter credential
@@ -44,7 +45,7 @@ jobs:
         if: steps.credential.outputs.ready == 'true'
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_PPT_TEST_KEY }}
-        run: uv run --project agent --locked --extra examples python examples/pptx_validation.py --output "$RUNNER_TEMP/pptx-validation"
+        run: uv run --project . --locked --extra examples python examples/pptx_validation.py --output "$RUNNER_TEMP/pptx-validation"
       - uses: actions/upload-artifact@v7
         if: steps.credential.outputs.ready == 'true'
         with:

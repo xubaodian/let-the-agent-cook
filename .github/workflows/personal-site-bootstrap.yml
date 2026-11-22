@@ -1,0 +1,89 @@
+name: Prepare personal site validation
+on:
+  push:
+    branches: [verify/personal-site]
+    paths:
+      - '.github/workflows/personal-site-bootstrap.yml'
+      - 'site/package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" --method POST \
+            -f state=pending -f context=preflight/bootstrap \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+  prepare:
+    needs: status
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Resolve site dependencies
+        run: npm install --package-lock-only
+      - name: Export dependency lock
+        run: |
+          gzip -c package-lock.json | base64 -w 960 | sed 's/^/SITE_LOCK_CHUNK /'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: site-lock
+          path: site/package-lock.json
+          if-no-files-found: error
+
+  capture:
+    needs: status
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+      - run: uv sync --locked --all-extras
+      - run: uv run --no-sync python -m playwright install --with-deps chromium
+      - name: Capture real browser replay
+        env:
+          AGENT_COOK_TEST_BROWSER: '1'
+          AGENT_COOK_REPLAY_OUTPUT: ${{ runner.temp }}/case-capture
+        run: uv run --no-sync python -m unittest discover -s tests -p test_example_plugins.py -k two_plugins_share_metrics -v
+      - name: Export fixture for site preparation
+        run: |
+          tar -C "$RUNNER_TEMP/case-capture" --exclude='preview.png' -czf "$RUNNER_TEMP/case-capture.tgz" .
+          base64 -w 960 "$RUNNER_TEMP/case-capture.tgz" | sed 's/^/CASE_CAPTURE_CHUNK /'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: case-capture
+          path: ${{ runner.temp }}/case-capture
+          if-no-files-found: error
+
+  finish:
+    if: always()
+    needs: [prepare, capture]
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PREPARE: ${{ needs.prepare.result }}
+      CAPTURE: ${{ needs.capture.result }}
+    steps:
+      - run: |
+          state=failure
+          if [[ "$PREPARE" == success && "$CAPTURE" == success ]]; then state=success; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" --method POST \
+            -f state="$state" -f context=preflight/bootstrap \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

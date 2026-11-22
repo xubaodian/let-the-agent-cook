@@ -11,7 +11,7 @@
 
 ## 运行
 
-在仓库根目录配置 OpenRouter 后，用 `./cook demo` 在本地原生沙箱运行样例。[安装与启动](../README.md#安装与启动)
+在仓库的 `agent/` 目录配置 OpenRouter 后，用 `./cook demo` 在本地原生沙箱运行样例。[安装与启动](../README.md#安装与启动)
 
 ```bash
 ./cook demo
@@ -21,7 +21,7 @@
 
 `fixture-data` 由执行入口自动启动。双插件样例按需启动宿主 `127.0.0.1:8766` 上的 `reference-library`，并在退出时回收。
 
-报名站使用服务端 Docker 后端验证模拟接口。在服务端先用 `uv run --project agent --no-sync python agent/src/agent_cook/data/plugins/reporting-studio/mcp/server.py` 启动示例 MCP，再启动下面的 API。把 `event-registration/run.json` 的 `task` 字段提交到 `POST /v1/runs`。Playwright 会在任务沙箱内启动报名模拟接口。 [HTTP 服务接口](../docs/server.md#api)
+报名站使用服务端 Docker 后端验证模拟接口。在服务端先用 `uv run --project . --no-sync python src/agent_cook/data/plugins/reporting-studio/mcp/server.py` 启动示例 MCP，再启动下面的 API。把 `event-registration/run.json` 的 `task` 字段提交到 `POST /v1/runs`。Playwright 会在任务沙箱内启动报名模拟接口。 [HTTP 服务接口](../docs/server.md#api)
 
 ```bash
 ./cook docker
@@ -33,15 +33,15 @@
 ## 本地回归
 
 ```bash
-uv run --project agent --extra mcp --extra examples python -m unittest discover -s agent/tests -p 'test_example_plugins.py' -v
+uv run --project . --extra mcp --extra examples python -m unittest discover -s tests -p 'test_example_plugins.py' -v
 ```
 
 默认回归使用脚本化模型和浏览器回执，执行实际的 CLI、MCP 服务、HTTP 接口、工作区 worker 和两个提交 Hook。双插件用例固定触发一次上下文压缩。使用以下命令运行真实 Chromium 交互。
 
 ```bash
-uv run --project agent --extra examples python -m playwright install chromium
-AGENT_COOK_TEST_BROWSER=1 uv run --project agent --extra mcp --extra examples \
-  python -m unittest discover -s agent/tests -p 'test_example_plugins.py' -v
+uv run --project . --extra examples python -m playwright install chromium
+AGENT_COOK_TEST_BROWSER=1 uv run --project . --extra mcp --extra examples \
+  python -m unittest discover -s tests -p 'test_example_plugins.py' -v
 ```
 
 报名站可在交付目录执行 `python serve.py` 后打开 `http://127.0.0.1:8075/`。双插件站点可在交付的 `out/site/` 对应目录执行 `python -m http.server 8075 --bind 127.0.0.1` 后打开同一地址。
@@ -50,10 +50,10 @@ AGENT_COOK_TEST_BROWSER=1 uv run --project agent --extra mcp --extra examples \
 
 三个主题分别为门店经营复盘（4 页）、博物馆展览提案（5 页）和 Agent Cook 上手指南（4 页）。验收通过 Responses 调用 DeepSeek V4.1 Flash 1017 或 Grok 4.7，再通过 Seedream 5.5 生成封面。脚本检查 PPT 能打开、标题顺序和页数符合要求、正文可编辑，以及提交的封面已嵌入第一页。
 
-在仓库根目录配置 OpenRouter 并准备本地原生工作区后运行以下命令。输出目录下会保存通过检查的 PPT 和运行记录。GitHub Actions 中同名验收工作流可读取 `OPENROUTER_PPT_TEST_KEY` 仓库密钥。
+在仓库的 `agent/` 目录配置 OpenRouter 并准备本地原生工作区后运行以下命令。输出目录下会保存通过检查的 PPT 和运行记录。GitHub Actions 中同名验收工作流可读取 `OPENROUTER_PPT_TEST_KEY` 仓库密钥。
 
 ```bash
-uv run --project agent --locked --extra examples python examples/pptx_validation.py --output ./pptx-validation
+uv run --project . --locked --extra examples python examples/pptx_validation.py --output ./pptx-validation
 ```
 
 普通 CI 在 Docker 中通过模拟的模型和图片响应验证真实工作区执行与交付。产物 `pptx-protocol-fixtures` 用于检查协议和工具回归。

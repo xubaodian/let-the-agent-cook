@@ -188,9 +188,9 @@ def _start_docker() -> str:
 def source_workspace() -> Path | None:
     parents = Path(__file__).resolve().parents
     if not getattr(sys, "frozen", False) and len(parents) > 4:
-        root = parents[4]
-        if (root / "sandbox/Dockerfile").is_file() and (root / "agent/pyproject.toml").is_file():
-            return root
+        project = parents[3]
+        if (project / "sandbox/Dockerfile").is_file() and (project / "pyproject.toml").is_file():
+            return project
     return None
 
 
