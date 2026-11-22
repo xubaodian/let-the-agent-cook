@@ -11,7 +11,7 @@ Agent Cook 是一个接入 OpenRouter 的终端助手。你可以用它对话、
 | macOS / Linux | `./install` | `./cook` |
 | Windows | 双击 `install.cmd` | 双击 `cook.cmd`，或运行 `.\cook.cmd` |
 
-安装脚本会准备 Python 和依赖，完成后打开 CLI。Ubuntu 源码安装需要额外安装 Bubblewrap（`sudo apt install bubblewrap`）。原生安装包发布后可在 Releases 下载。 [安装指南](docs/install.md) · [GitHub Releases](https://github.com/xubaodian/let-the-agent-cook/releases)
+安装脚本会准备 Python、Node.js、npm 和 Chromium，以及处理 Excel、Word、PPT、PDF、图片和表格数据的常用库，完成后打开 CLI。Ubuntu 源码安装需要 Bubblewrap（`sudo apt install bubblewrap`）。需要用实际排版引擎预览 PPT 时，可加 `--with-office` 安装 LibreOffice。 [安装指南](docs/install.md) · [GitHub Releases](https://github.com/xubaodian/let-the-agent-cook/releases)
 
 首次启动时，在浏览器授权 OpenRouter 或粘贴已有的 API Key，再选择支持工具调用的模型。Exa 用于网页检索，可按 Enter 跳过。 [配置说明](docs/install.md#配置)
 
@@ -32,6 +32,8 @@ Agent Cook 是一个接入 OpenRouter 的终端助手。你可以用它对话、
 每个任务默认最多 **300 轮模型调用**，一次模型响应计一轮。用 `agent-cook --max-turns 500` 或 `agent-cook exec --max-turns 500 "任务"` 调整，也可在 `agent-cook.json` 中设置 `run.max_turns`，命令行参数优先。任务没有总执行时限。 [单次调用时限](docs/workspace-tools.md#输出与上限)
 
 默认可用 PPT、网站构建、数据分析、汇报材料、资料调研和视觉素材 6 个 Skill。需要 Studio 的工作流程时，可用 `agent-cook --plugin reporting-studio` 或 `agent-cook --plugin project-reporting-studio` 启动。 [Skill 和 Plugin 用法](docs/plugins.md)
+
+需要额外的 Python 或 Node.js 库时，Agent 可以用 `install_dependencies` 安装到当前任务环境。 [预装库和按需安装](docs/workspace-tools.md#办公与数据处理依赖)
 
 ## 使用示例
 

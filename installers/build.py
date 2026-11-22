@@ -51,10 +51,7 @@ def freeze(work: Path, image: str, models: Path | None, identity: str | None) ->
         raise SystemExit("Run the installer build with uv on PATH.")
     native = data / "native"
     shutil.copy2(uv, native / ("uv.exe" if os.name == "nt" else "uv"))
-    project = native / "project"
-    project.mkdir()
-    for name in (".python-version", "pyproject.toml", "uv.lock"):
-        shutil.copyfile(ROOT / "agent" / name, project / name)
+    shutil.copyfile(ROOT / "agent/.python-version", native / ".python-version")
     if models is not None:
         from agent_cook.model.catalog import ModelCatalog
 

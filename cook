@@ -50,6 +50,7 @@ install_environment() {
     fi
     echo "Installing Agent Cook with Python $(< "$project/.python-version") …" >&2
     "$uv" sync --project "$project" --locked --python "$(< "$project/.python-version")" --extra examples --extra server --extra e2b
+    export AGENT_COOK_UV="$uv"
 }
 
 launch() {
@@ -71,15 +72,23 @@ case "${1:-}" in
         if [[ "${1:-}" == --launch ]]; then
             shift
             install_environment
+            if [[ "${1:-}" == --with-office ]]; then
+                shift
+                "$python" -m agent_cook setup-runtime --with-office
+            else
+                "$python" -m agent_cook setup-runtime
+            fi
             launch -m agent_cook "$@"
         fi
-        if [[ $# -gt 1 || ($# -eq 1 && "$1" != --docker) ]]; then
-            echo "Usage: ./cook setup [--docker]" >&2
+        if [[ $# -gt 1 || ($# -eq 1 && "$1" != --docker && "$1" != --with-office) ]]; then
+            echo "Usage: ./cook setup [--docker|--with-office]" >&2
             exit 2
         fi
         install_environment
-        if [[ $# -eq 1 ]]; then
+        if [[ "${1:-}" == --docker ]]; then
             launch -m agent_cook docker
+        else
+            "$python" -m agent_cook setup-runtime "$@"
         fi
         ;;
     run)

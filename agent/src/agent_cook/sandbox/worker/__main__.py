@@ -6,6 +6,7 @@ from typing import Any, BinaryIO
 
 from agent_cook.sandbox.limits import MAX_RPC_BYTES, WORKER_VERSION, WORKSPACE_ROOT
 from agent_cook.sandbox.worker.browser import playwright_preview, playwright_public
+from agent_cook.sandbox.worker.dependencies import install_dependencies
 from agent_cook.sandbox.worker.process import run_command, run_hook
 from agent_cook.sandbox.worker.workspace import (
     Workspace,
@@ -21,6 +22,7 @@ from agent_cook.sandbox.worker.workspace import (
 _OPERATIONS = {
     "copy_file": copy_file,
     "download": download,
+    "install_dependencies": install_dependencies,
     "list_files": list_files,
     "playwright": playwright_preview,
     "playwright_public": playwright_public,

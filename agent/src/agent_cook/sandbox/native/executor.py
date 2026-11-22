@@ -23,7 +23,7 @@ def environment(scratch: Path, paths: tuple[Path, ...]) -> dict[str, str]:
     result = {
         "HOME": str(scratch), "USERPROFILE": str(scratch), "TMPDIR": str(scratch),
         "TMP": str(scratch), "TEMP": str(scratch), "APPDATA": str(scratch), "LOCALAPPDATA": str(scratch),
-        "LANG": "C.UTF-8", "PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1",
+        "LANG": "C.UTF-8", "PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1", "MPLBACKEND": "Agg",
     }
     if sys.platform == "win32":
         system = Path(os.environ.get("SystemRoot", r"C:\Windows"))

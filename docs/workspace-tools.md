@@ -37,6 +37,7 @@ flowchart TD
 | `write_file` | 原子写入整份 UTF-8 文本，按需创建父目录。`overwrite` 可以控制覆盖。 |
 | `copy_file` | 复制工作区里的单个文件，支持二进制，默认保留已有目标。 |
 | `run_command` | 用 `argv`、`cwd` 和 `timeout_seconds` 运行 Python、Node.js 或后端提供的系统程序。返回退出码、stdout、stderr、超时与截断状态。 |
+| `install_dependencies` | 通过 PyPI 或 npm 安装当前任务要用的额外库，下一次 `run_command` 即可导入。 |
 | `playwright` | 预览工作区 HTML，支持点击、填值、按键、文本断言和 PNG 截图。服务端后端还支持临时测试服务器和允许列表内的公网 HTTPS 页面。 |
 | `generate_image` | 用配置的 OpenRouter 生图模型生成封面、网站主图或说明插画等素材，返回工作区路径、格式、字节数和模型 ID。 |
 | `submit_results` | 批量导出指定文件，返回 `ArtifactRef` 并记录产物和 UI 附件。随后 Agent 可以继续总结结果。 |
@@ -46,6 +47,32 @@ flowchart TD
 常规文件操作使用工作区相对路径。`playwright` 适合验证 Agent 生成的本地网页和启动的测试服务器，截图写回工作区。用 `submit_results` 选出交付文件，批次在全部读取成功后才出现在产物目录中。
 
 `ls` 的 `directory` 默认为 `.`。用 `kind=file` 或 `kind=directory` 筛选类型，用 `recursive=true` 查看子目录。结果按路径排序。下一页沿用原参数，将 `next_cursor` 传入 `cursor`。如果 `truncated=true` 且 `next_cursor` 为空，可以缩小目录范围继续查找。
+
+## 办公与数据处理依赖
+
+源码安装预先准备 Python 3.12、Node.js 24、npm 和 Playwright Chromium。原生安装包也可用 `agent-cook setup-runtime` 提前准备。本地与新服务端镜像使用同一份 Python 包清单。
+
+| 用途 | 预装库 |
+|---|---|
+| Excel | openpyxl、XlsxWriter、xlrd（读取旧版 XLS） |
+| Word 和 PPT | python-docx、python-pptx |
+| PDF 和图片 | pypdf、pypdfium2、Pillow |
+| 数据与绘图 | pandas、NumPy、SciPy、PyArrow、Matplotlib |
+| 文本与配置 | charset-normalizer、PyYAML |
+
+已安装 LibreOffice 时，本地工作区可用 `soffice` 将 PPTX 转成 PDF，再用 pypdfium2 生成逐页图片。源码安装用 `./install --with-office` 或 `.\install.cmd --with-office` 加装。服务端镜像自带无界面的 Impress 和中日韩字体。 [依赖清单](../agent/src/agent_cook/data/native/workspace-requirements.txt) · [LibreOffice](https://www.libreoffice.org/download/)
+
+`install_dependencies` 接受包名和可选的精确版本。安装结果在当前任务中可复用，后端回收任务工作区时一并清除。本地由专用安装器访问公共包仓库，普通任务命令继续离线。Docker 和同源 E2B 模板需要更新镜像并启用 `--sandbox-network`，工具才可用。
+
+```json
+{"ecosystem": "python", "packages": ["humanize==4.13.0"]}
+```
+
+```json
+{"ecosystem": "node", "packages": ["kleur@4.1.5"]}
+```
+
+Python 从 PyPI 安装 wheel，后续使用普通的 `python` 命令导入。Node.js 可在工作区内使用 `require` 或 `import`。npm 安装时禁用生命周期脚本。工具接收 Python 和 Node.js 的公共注册表包名。
 
 ## 网页检索和浏览器补查
 
@@ -114,7 +141,7 @@ uv run --project agent agent-cook \
 | Linux | Bubblewrap 命名空间和只读挂载。 |
 | Windows | AppContainer 文件权限、无网络能力和 Job Object 进程管理。 |
 
-运行环境提供 Python 3.12、openpyxl、python-pptx、Pillow、Node.js 22 和 Playwright Chromium。Node.js 和 Chromium 在首次使用时准备。任务脚本默认离线，浏览器预览使用本地 HTML 和资源文件。执行前可用 `agent-cook doctor` 检查进程隔离。
+任务脚本默认离线，浏览器预览使用本地 HTML 和资源文件。执行前可用 `agent-cook doctor` 检查进程隔离。
 
 ```bash
 ./cook run '写一个计数器网页，用 playwright 点击按钮并截屏。用 submit_results 交付网页和截图。'
@@ -124,7 +151,7 @@ uv run --project agent agent-cook \
 
 可用 `./cook docker` 准备任务镜像，再用 `./cook serve --sandbox docker` 启动 HTTP 服务。自建镜像通过服务端的 `--docker-image` 配置。每个 Run 使用独立容器。`--sandbox-network` 可为服务端任务单独开启出网。
 
-服务端镜像和同源 E2B 模板带有 Node.js、npm、Chromium，以及 Excel、Office、PDF、绘图和数值计算依赖。[镜像依赖清单](../sandbox/requirements.txt) · [运行 HTTP 服务](server.md)
+服务端镜像和同源 E2B 模板带有 Node.js、npm、Chromium 和相同的办公及数据处理依赖。 [运行 HTTP 服务](server.md)
 
 ## 远程 E2B
 

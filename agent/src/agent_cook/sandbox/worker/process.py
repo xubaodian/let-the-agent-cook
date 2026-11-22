@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory, TemporaryFile
 from time import monotonic
 from typing import Any
 
+from agent_cook.sandbox.dependencies import PYTHON_PACKAGES, WORKER_DEPENDENCIES
 from agent_cook.sandbox.limits import DEFAULT_COMMAND_SECONDS, MAX_COMMAND_OUTPUT, MAX_COMMAND_SECONDS
 from agent_cook.sandbox.worker.workspace import Workspace
 
@@ -17,7 +18,7 @@ _ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "PLAYWRIGHT_BROWSERS_PATH", "M
 
 
 def launch(
-    argv: list[str], cwd: Path, *, capture: bool, input_text: str | None = None,
+    argv: list[str], cwd: Path, *, capture: bool, input_text: str | None = None, env: dict[str, str] | None = None,
 ) -> subprocess.Popen[bytes]:
     if (
         not isinstance(argv, list)
@@ -27,7 +28,11 @@ def launch(
     ):
         raise ValueError("Pass a nonempty argv array with a program and its arguments.")
     target = subprocess.PIPE if capture else subprocess.DEVNULL
-    env = {name: os.environ[name] for name in _ENV if name in os.environ}
+    if env is None:
+        env = {name: os.environ[name] for name in _ENV if name in os.environ}
+        packages = WORKER_DEPENDENCIES / PYTHON_PACKAGES
+        if packages.is_dir():
+            env["PYTHONPATH"] = str(packages)
     with ExitStack() as resources:
         stdin = subprocess.DEVNULL
         if input_text is not None:
@@ -57,9 +62,16 @@ def run_command(
     workspace: Workspace, argv: list[str], cwd: str = ".", timeout_seconds: float = DEFAULT_COMMAND_SECONDS,
     *, input_text: str | None = None,
 ) -> dict[str, Any]:
+    return capture_command(argv, workspace.directory_path(cwd), timeout_seconds, input_text=input_text)
+
+
+def capture_command(
+    argv: list[str], cwd: Path, timeout_seconds: float, *,
+    input_text: str | None = None, env: dict[str, str] | None = None,
+) -> dict[str, Any]:
     if not 0 < timeout_seconds <= MAX_COMMAND_SECONDS:
         raise ValueError(f"Command timeout must be between 0 and {MAX_COMMAND_SECONDS} seconds.")
-    process = launch(argv, workspace.directory_path(cwd), capture=True, input_text=input_text)
+    process = launch(argv, cwd, capture=True, input_text=input_text, env=env)
     assert process.stdout is not None and process.stderr is not None
     output = {"stdout": bytearray(), "stderr": bytearray()}
     deadline = monotonic() + timeout_seconds

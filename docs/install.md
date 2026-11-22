@@ -4,9 +4,13 @@
 
 解压源码，在 macOS 或 Linux 运行 `./install`，在 Windows 双击 `install.cmd`。安装器优先使用兼容的 uv，必要时将固定版本装到源码自己的工具目录，再按 `agent/.python-version` 和 `agent/uv.lock` 安装 Agent Cook。安装完成会打开 CLI。以后用 `./cook` 或 `cook.cmd` 启动，重复运行安装可补齐依赖。[uv 安装器](https://docs.astral.sh/uv/reference/installer/)
 
+源码安装同时准备工作区 Python 依赖、Node.js 和 npm，以及 Playwright Chromium，后续启动复用用户缓存。用 `./install --with-office` 或 `.\install.cmd --with-office` 加装 LibreOffice，以便把 PPT 转成真实预览。加装在 macOS 使用 Homebrew，在 Windows 使用 WinGet，在 Ubuntu 使用 APT。平台安装工具会按需提示权限。 [预装依赖与 PPT 预览](workspace-tools.md#办公与数据处理依赖)
+
 ## 从原生安装包安装
 
 从 [Agent Cook Releases](https://github.com/xubaodian/let-the-agent-cook/releases/latest) 下载对应的安装包。CLI 和 Python 随安装包提供，打开后使用与源码安装相同的向导。
+
+原生安装包在首次用到时准备工作区运行时。也可在终端提前运行 `agent-cook setup-runtime`，需要安装 LibreOffice 时加 `--with-office`。已装的 LibreOffice 自动识别。
 
 | 系统 | 安装包 | 安装后打开 |
 | --- | --- | --- |
@@ -18,7 +22,7 @@
 
 1. 打开 Agent Cook。按 Enter 在浏览器授权 OpenRouter，或输入 `key` 无回显粘贴已有 Key。可录入 Exa Key 或按 Enter 跳过，然后选择对话模型或输入模型 ID。
 2. 输入 `/example` 生成样例目录。把终端给出的任务粘贴回 CLI。处理自己的文件时，可用 `@路径` 或 `@"带空格的目录"` 选择文件夹。多个输入可以一起选择。
-3. 本地脚本通过系统沙箱执行。Linux 源码用户需安装 Bubblewrap，例如在 Ubuntu 运行 `sudo apt install bubblewrap`。首次运行 Node.js 或预览网页时会下载并缓存运行时，原生安装包也会按需准备文件处理所用的 Python 环境。
+3. 本地脚本通过系统沙箱执行。Linux 源码用户需安装 Bubblewrap，例如在 Ubuntu 运行 `sudo apt install bubblewrap`。用 `agent-cook doctor --runtime` 可验证 Python、Node.js、npm 和 Chromium。
 4. 成功后，终端会显示结果目录的绝对路径。输入 `/open` 可在文件管理器打开。安装包的应用入口将任务记录和结果保存在用户主目录的 `Agent Cook/.agent-cook/runs/`。
 
 附加目录时保留目录名和文件层级，原件保留在宿主机。每个文件最多 16 MiB，一批输入最多 32 MiB。导入跳过目录内的符号链接与 Windows 联接。路径冲突会提示具体文件或文件夹。成功后 `<run_id>-results/` 包含通过最终校验的产物。提交批次与记录在同一层，供回放与续接使用。
