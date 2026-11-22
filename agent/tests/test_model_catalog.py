@@ -40,10 +40,10 @@ class ModelCatalogTest(unittest.TestCase):
                 },
                 "model_api": "responses",
                 "sandbox": {"backend": "docker", "docker_image": "config/sandbox", "network": True},
-                "run": {"max_turns": 12, "timeout": 180},
+                "run": {"max_turns": 500, "timeout": 180},
             }), encoding="utf-8")
             cases = (
-                ({}, [], "config-key", "config-exa-key", "config/chat", "config/image", 12),
+                ({}, [], "config-key", "config-exa-key", "config/chat", "config/image", 500),
                 ({"OPENROUTER_API_KEY": "env-key", "EXA_API_KEY": "env-exa-key", "OPENROUTER_MODEL": "env/chat"},
                  ["--image-model", "cli/image", "--max-turns", "9"],
                  "env-key", "env-exa-key", "env/chat", "cli/image", 9),
@@ -65,17 +65,19 @@ class ModelCatalogTest(unittest.TestCase):
                 self.assertEqual(run.await_args.kwargs["model_api"], "responses")
                 factory.assert_called_once_with()
 
-    def test_legacy_timeout_config_leaves_the_default_turn_budget_unset(self):
+    def test_default_turn_budget_is_300_with_empty_or_legacy_config(self):
         with TemporaryDirectory() as directory:
             config = Path(directory) / "config.json"
-            config.write_text(json.dumps({"run": {"timeout": 120}}), encoding="utf-8")
-            with (
-                patch.dict(os.environ, {"OPENROUTER_API_KEY": "fixture-key", "OPENROUTER_MODEL": "fixture/model"}, clear=True),
-                patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=RunResult("run", "Done.")) as run,
-                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()),
-            ):
-                self.assertEqual(main(["exec", "-C", directory, "--config", str(config), "Check."]), 0)
-            self.assertIsNone(run.await_args.args[0].max_model_turns)
+            for data in ({}, {"run": {"timeout": 120}}):
+                config.write_text(json.dumps(data), encoding="utf-8")
+                with (
+                    self.subTest(config=data),
+                    patch.dict(os.environ, {"OPENROUTER_API_KEY": "fixture-key", "OPENROUTER_MODEL": "fixture/model"}, clear=True),
+                    patch("agent_cook.cli._run", new_callable=AsyncMock, return_value=RunResult("run", "Done.")) as run,
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()),
+                ):
+                    self.assertEqual(main(["exec", "-C", directory, "--config", str(config), "Check."]), 0)
+                self.assertEqual(run.await_args.args[0].max_model_turns, 300)
 
     def test_list_models_has_no_defaults_without_user_configuration(self):
         with patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()) as stdout:

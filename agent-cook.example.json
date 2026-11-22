@@ -30,6 +30,7 @@
     "concurrency": 1
   },
   "run": {
-    "context_window": 32768
+    "context_window": 32768,
+    "max_turns": 300
   }
 }

@@ -3,6 +3,7 @@ import unittest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
+from agent_cook.context.policy import ContextPolicy
 from agent_cook.context.prompts import EXECUTION_PROMPT
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec, SubagentSpec
@@ -165,6 +166,35 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
                     )
                 handler.assert_not_awaited()
                 self.assertEqual(records[-1].type, "run.failed")
+
+    async def test_default_turn_budget_allows_completion_at_300_and_stops_more_tools(self):
+        for complete in (True, False):
+            with self.subTest(complete=complete):
+                registry = ToolRegistry()
+                handler = AsyncMock(return_value=ToolResult("Checked."))
+                registry.register(tool_definition(), handler)
+                final_turn = (
+                    ModelTurn(Message("assistant", "Done."), "stop") if complete
+                    else tool_turn(ToolCall("last-call", "fixture", '{"value":"work"}'))
+                )
+                model = ScriptedModel(
+                    *(tool_turn(ToolCall(f"call-{index}", "fixture", '{"value":"work"}')) for index in range(299)),
+                    final_turn,
+                )
+                run = run_agent(
+                    AgentSpec(
+                        "fixture/model", tool_names=("fixture",),
+                        context_policy=ContextPolicy(context_window=131_072),
+                    ),
+                    "Finish the task", model=model, tools=registry,
+                )
+                if complete:
+                    self.assertEqual((await run).text, "Done.")
+                else:
+                    with self.assertRaisesRegex(AgentRunError, "budget"):
+                        await run
+                self.assertEqual(model.next_turn.await_count, 300)
+                self.assertEqual(handler.await_count, 299)
 
     async def test_cancellation_closes_an_acquired_sandbox(self):
         sandbox = SandboxFixture()

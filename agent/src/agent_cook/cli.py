@@ -15,7 +15,7 @@ from tempfile import mkdtemp
 from uuid import uuid4
 
 from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
-from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
+from agent_cook.core.types import DEFAULT_MAX_MODEL_TURNS, AgentRunError, AgentSpec, RunResult
 from agent_cook.delivery import publish_results, result_snapshots
 from agent_cook.events.journal import RunEvents, write_jsonl
 from agent_cook.extensions.plugins import bundled_plugins, load_plugins, plugin_path
@@ -208,7 +208,10 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument(
         "--context-window", type=int, help="Context window in tokens for the selected model",
     )
-    parser.add_argument("--max-turns", type=int, help="Optional maximum number of model turns per task")
+    parser.add_argument(
+        "--max-turns", type=int,
+        help=f"Maximum model turns per task (default: {DEFAULT_MAX_MODEL_TURNS}, configurable via run.max_turns)",
+    )
     return parser
 
 
@@ -251,7 +254,7 @@ def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCat
     if args.context_window is None:
         args.context_window = config.run.get("context_window", DEFAULT_CONTEXT_POLICY.context_window)
     if args.max_turns is None:
-        args.max_turns = config.run.get("max_turns")
+        args.max_turns = config.run.get("max_turns", DEFAULT_MAX_MODEL_TURNS)
     if mode == "serve":
         for name, default in (("host", "127.0.0.1"), ("port", 8000), ("concurrency", 1)):
             if getattr(args, name) is None:

@@ -4,13 +4,15 @@ from math import isfinite
 from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY, ContextPolicy
 from agent_cook.protocol.artifacts import ArtifactRef
 
+DEFAULT_MAX_MODEL_TURNS = 300
+
 
 @dataclass(frozen=True, slots=True)
 class AgentSpec:
     model: str
     instructions: str = ""
     tool_names: tuple[str, ...] = ()
-    max_model_turns: int | None = None
+    max_model_turns: int | None = DEFAULT_MAX_MODEL_TURNS
     context_policy: ContextPolicy = DEFAULT_CONTEXT_POLICY
     require_submission: bool | None = None
     web_enabled: bool = False

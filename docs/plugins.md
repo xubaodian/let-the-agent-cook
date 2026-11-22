@@ -82,7 +82,7 @@ MCP 服务随插件启用时自动连接。将 Agent Cook 扩展中的 `connect_
 
 ## 子 Agent
 
-`agents/data-reviewer.md` 的 frontmatter 声明角色，正文是子 Agent 的指令。`model` 省略或为 `inherit` 时使用父 Agent 模型。父任务或角色可显式设置轮次上限，两者都设置时取较小值。角色也可用 `timeout_seconds` 显式限制一次 `delegate` 调用。
+`agents/data-reviewer.md` 的 frontmatter 声明角色，正文是子 Agent 的指令。`model` 省略或为 `inherit` 时使用父 Agent 模型。子 Agent 继承父任务的轮次上限，父任务默认最多 300 轮。角色可用 `max_model_turns` 显式设置更小的上限，也可用 `timeout_seconds` 显式限制一次 `delegate` 调用。
 
 ```markdown
 ---
