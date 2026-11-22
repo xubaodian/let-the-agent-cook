@@ -35,7 +35,7 @@ def environment(scratch: Path, paths: tuple[Path, ...]) -> dict[str, str]:
     return result
 
 
-def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...]) -> list[str]:
+def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...], *, office: bool) -> list[str]:
     executable = Path("/usr/bin/sandbox-exec")
     if not executable.is_file():
         raise SandboxError("This macOS installation does not provide the Seatbelt process launcher.")
@@ -46,7 +46,11 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...]) -> list[str]
     mime = ' '.join(f'(literal "/private/etc/{name}mime.types")' for name in (
         "", "apache/", "apache2/", "httpd/", "httpd/conf/",
     ))
-    services = " ".join(f'(global-name "{service}")' for service in _MAC_SERVICES)
+    mac_services = _MAC_SERVICES
+    if office:
+        # The stock macOS build initializes AppKit even for headless conversions.
+        mac_services += ("com.apple.coreservices.launchservicesd",)
+    services = " ".join(f'(global-name "{service}")' for service in mac_services)
     writable = f"(subpath {json.dumps(str(root), ensure_ascii=False)})"
     profile = f"""(version 1)
 (deny default (with message "agent-cook isolation"))
@@ -62,6 +66,7 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...]) -> list[str]
 (allow file-map-executable {readable})
 (allow file-write* {writable} (literal "/dev/null") (literal "/dev/zero"))
 (allow mach-lookup {services})
+(deny lsopen job-creation appleevent-send)
 (allow iokit-open (iokit-registry-entry-class "RootDomainUserClient"))
 (allow ipc-posix-shm-read-data (ipc-posix-name "apple.shm.notification_center"))
 """
@@ -144,7 +149,7 @@ async def _posix(
 async def execute(
     argv: list[str], *, root: Path, cwd: Path, reads: tuple[Path, ...],
     env: dict[str, str], timeout: float, payload: bytes | None = None, maximum: int = MAX_COMMAND_OUTPUT,
-    browser_controller: bool = False,
+    browser_controller: bool = False, office: bool = False,
 ) -> CommandResult:
     if sys.platform == "win32":
         from agent_cook.sandbox.native.windows import run
@@ -162,7 +167,7 @@ async def execute(
                 await pending
             raise
     if sys.platform == "darwin":
-        command = _seatbelt(argv, root, reads)
+        command = _seatbelt(argv, root, reads, office=office)
     elif sys.platform.startswith("linux"):
         command = _bubblewrap(argv, root, cwd, reads)
     else:
