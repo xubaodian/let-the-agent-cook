@@ -10,7 +10,7 @@
 
 从 [Agent Cook Releases](https://github.com/xubaodian/let-the-agent-cook/releases/latest) 下载对应的安装包。CLI 和 Python 随安装包提供，打开后使用与源码安装相同的向导。
 
-原生安装包在首次用到时准备工作区运行时。也可在终端提前运行 `agent-cook setup-runtime`，需要安装 LibreOffice 时加 `--with-office`。已装的 LibreOffice 自动识别。
+原生安装包在首次用到时准备工作区运行时。也可在终端用安装目录中的 CLI 执行 `setup-runtime`，需要安装 LibreOffice 时加 `--with-office`。已装的 LibreOffice 自动识别。
 
 | 系统 | 安装包 | 安装后打开 |
 | --- | --- | --- |

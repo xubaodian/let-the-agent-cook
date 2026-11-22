@@ -78,7 +78,8 @@ class NativeSandbox:
                 program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files")).resolve()
                 if office.is_relative_to(program_files):
                     return office, ()
-            config = (Path("/etc/fonts"),) if sys.platform.startswith("linux") else ()
+            # Debian and Ubuntu keep the system registry outside the LibreOffice program tree.
+            config = (Path("/etc/fonts"), Path("/etc/libreoffice")) if sys.platform.startswith("linux") else ()
             return office, (office.parent.parent, *config)
         if sys.platform == "win32":
             system = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
