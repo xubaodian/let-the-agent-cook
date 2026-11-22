@@ -13,5 +13,5 @@
 
 在仓库里查看各自的运行说明。
 
-- [安装和使用 Agent Cook](agent/README.md)
+- [安装和使用 Agent Cook](agent/README.md) · [复制安装指令给 Agent](agent/README.md#复制给-agent)
 - [本地预览、新建内容和自动发布站点](site/README.md)
