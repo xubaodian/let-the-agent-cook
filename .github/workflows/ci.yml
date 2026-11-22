@@ -81,3 +81,19 @@ jobs:
 
   installers:
     uses: ./.github/workflows/installers.yml
+
+  preflight-status:
+    if: always() && github.ref == 'refs/heads/verify/model-context-budget'
+    needs: [python, docker, installers]
+    permissions:
+      statuses: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PASSED: ${{ needs.python.result == 'success' && needs.docker.result == 'success' && needs.installers.result == 'success' }}
+    steps:
+      - run: |
+          state=failure
+          if [[ "$PASSED" == true ]]; then state=success; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state="$state" -f context=preflight/context-budget \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

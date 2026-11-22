@@ -37,7 +37,7 @@ class ServerConfigTest(unittest.TestCase):
             root = Path(directory)
             (root / "agent-cook.json").write_text(json.dumps({
                 "api_keys": {"openrouter": "config-key", "exa": "config-exa-key"},
-                "models": {"chat": {"default": "config/chat", "available": ["config/chat"]}},
+                "models": {"chat": {"default": "config/chat", "available": ["config/chat", "config/other"]}},
                 "server": {"token": "config-token", "host": "localhost", "port": 9456, "data_dir": "data"},
             }), encoding="utf-8")
             with (
@@ -51,10 +51,12 @@ class ServerConfigTest(unittest.TestCase):
                 self.assertEqual(app.call_args.args[0], root / "data")
                 options = app.call_args.kwargs
                 self.assertEqual(options["token"], "config-token")
-                self.assertEqual(options["chat_choices"], ("config/chat",))
+                self.assertEqual(options["chat_choices"], ("config/chat", "config/other"))
                 serve.assert_called_once_with(app.return_value, host="localhost", port=9457, workers=1)
-                job = Job("run", "Check.", (), "config/chat", None)
+                job = Job("run", "Check.", (), "config/other", None)
                 asyncio.run(options["execute"](job, {}, None, root))
+                self.assertEqual(run.await_args.args[0].model, "config/other")
+                self.assertTrue(run.await_args.kwargs["discover_context_window"])
                 self.assertEqual(run.await_args.args[2], "config-key")
                 self.assertEqual(run.await_args.kwargs["exa_api_key"], "config-exa-key")
 

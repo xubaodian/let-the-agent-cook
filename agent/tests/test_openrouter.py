@@ -92,10 +92,11 @@ class CliTest(unittest.TestCase):
             with (
                 patch.dict(os.environ, environment),
                 patch.dict(sys.modules, {"openai": sdk}),
+                patch("agent_cook.runner.openrouter_context_windows", return_value={"fixture/model": 128_000}),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
-                status = main(["--sandbox", "none", "Say hello", "--trace", str(trace)])
+                status = main(["--sandbox", "none", "Say hello. " + "x" * 96_000, "--trace", str(trace)])
                 duplicate_status = main(["--sandbox", "none", "Try again", "--trace", str(trace)])
             raw_trace = trace.read_text(encoding="utf-8")
             events = [json.loads(line) for line in raw_trace.splitlines()]
@@ -110,6 +111,9 @@ class CliTest(unittest.TestCase):
         self.assertNotIn("tools", create.call_args.kwargs)
         self.assertNotIn("test-key", raw_trace)
         self.assertEqual([event["seq"] for event in events], [1, 2, 3, 4])
+        self.assertEqual(events[0]["data"]["context_window"], 128_000)
+        self.assertEqual(events[0]["data"]["input_budget"], 122_880)
+        self.assertEqual(events[0]["data"]["compaction_threshold"], 98_304)
         self.assertEqual(events[-1]["data"]["text"], "The kitchen is ready.")
 
 

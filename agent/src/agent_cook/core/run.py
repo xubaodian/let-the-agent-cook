@@ -26,6 +26,7 @@ async def run_agent(
     subagents: Sequence[SubagentSpec] = (),
     hook: ToolHook | None = None,
     session: Session | None = None,
+    model_context_windows: Mapping[str, int] | None = None,
 ) -> RunResult:
     """Run a task and own its resources through completion or cancellation.
 
@@ -40,12 +41,16 @@ async def run_agent(
     tools = tools if tools is not None else ToolRegistry()
     if subagents:
         tools = tools.copy()
-        register_delegate(tools, subagents, spec, model)
+        register_delegate(tools, subagents, spec, model, model_context_windows)
         spec = replace(spec, tool_names=(*spec.tool_names, DELEGATE_TOOL))
     session = session if session is not None else Session()
     session.messages.append(Message(role="user", content=task))
     inputs = dict(input_files) if isinstance(input_files, Mapping) else input_files
-    events.emit("run.started", model=spec.model)
+    policy = spec.context_policy
+    events.emit(
+        "run.started", model=spec.model, context_window=policy.context_window,
+        input_budget=policy.input_budget, compaction_threshold=policy.compaction_threshold,
+    )
 
     @asynccontextmanager
     async def open_sandbox():

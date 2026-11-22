@@ -1,7 +1,6 @@
 import base64
 import getpass
 import hashlib
-import json
 import secrets
 import sys
 import time
@@ -9,33 +8,10 @@ import warnings
 import webbrowser
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlsplit
-from urllib.request import Request, urlopen
 
 from agent_cook.model.catalog import ModelChoices
-from agent_cook.model.openrouter import OPENROUTER_BASE_URL
-
-
-def _openrouter(path: str, *, data: dict | None = None, key: str | None = None) -> dict:
-    headers = {"Accept": "application/json"}
-    if data is not None:
-        headers["Content-Type"] = "application/json"
-    if key:
-        headers["Authorization"] = "Bearer " + key
-    request = Request(
-        OPENROUTER_BASE_URL + path, data=json.dumps(data).encode() if data is not None else None, headers=headers,
-    )
-    try:
-        with urlopen(request, timeout=15) as response:
-            value = json.loads(response.read(8 * 1024 * 1024 + 1))
-    except HTTPError as error:
-        raise ValueError(f"OpenRouter returned HTTP {error.code}.") from error
-    except (OSError, ValueError) as error:
-        raise ValueError("Could not read the response from OpenRouter.") from error
-    if not isinstance(value, dict):
-        raise ValueError("OpenRouter returned an unexpected response.")
-    return value
+from agent_cook.model.openrouter_metadata import openrouter_json as _openrouter
 
 
 def connect_browser() -> str:

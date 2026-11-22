@@ -20,7 +20,8 @@ Record attempted, successful, and submitted work according to tool results.
 State which file version a check covered and which follow-up changes still need verification.
 Include the current stage and relevant Skill entries or sections already read.
 Mark unresolved items explicitly and order them by the next actions they require.
-Use the task's language for the body. Keep each heading below exactly as written, even if the section is empty.
+Use the task's language for the body. Stay within the input's checkpoint_max_tokens limit.
+Keep each heading below exactly as written, even if the section is empty.
 Return only the checkpoint, using these Markdown headings in order.
 
 """ + "\n".join(f"## {heading}" for heading in CHECKPOINT_HEADINGS)
