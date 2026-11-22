@@ -10,8 +10,11 @@ import { getReplay } from "../../lib/replays"
 export async function getStaticPaths() {
   const [cases, notes] = await Promise.all([getCollection("cases"), getCollection("notes")])
   return cases.map((entry) => {
-    const related = notes.find((note) => note.id === entry.data.relatedNote)
-    if (entry.data.relatedNote && !related) throw new Error("Missing related note for " + entry.id)
+    const related = entry.data.relatedNotes.map((id) => {
+      const note = notes.find((candidate) => candidate.id === id)
+      if (!note) throw new Error("Missing related note " + id + " for " + entry.id)
+      return note
+    })
     return { params: { id: entry.id }, props: { entry, related } }
   })
 }
@@ -47,6 +50,10 @@ const downloads = replay?.downloads.map((item) => ({ ...item, path: url(item.pat
         <pre><code>{entry.data.command}</code></pre>
       </section>
     )}
-    {related && <aside class="related"><a href={url("notes/" + related.id + "/")}>了解原理 · {related.data.title} →</a></aside>}
+    {related.length > 0 && (
+      <aside class="related">
+        {related.map(({ id, data }) => <a href={url("notes/" + id + "/")}>了解原理 · {data.title} →</a>)}
+      </aside>
+    )}
   </article>
 </SiteLayout>

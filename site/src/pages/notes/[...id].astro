@@ -8,7 +8,7 @@ export async function getStaticPaths() {
   const [notes, cases] = await Promise.all([getCollection("notes"), getCollection("cases")])
   return notes.map((note) => ({
     params: { id: note.id },
-    props: { note, related: cases.filter((entry) => entry.data.relatedNote === note.id) },
+    props: { note, related: cases.filter((entry) => entry.data.relatedNotes.includes(note.id)) },
   }))
 }
 type Props = InferGetStaticPropsType<typeof getStaticPaths>
@@ -26,7 +26,11 @@ const { Content } = await render(note)
     <div class="prose"><Content /></div>
     {(note.data.sourcePath || related.length > 0) && (
       <aside class="related">
-        {related.map(({ id, data }) => <a href={url("cases/" + id + "/#replay")}>看案例回放 · {data.title} →</a>)}
+        {related.map(({ id, data }) => (
+          <a href={url("cases/" + id + "/" + (data.replay ? "#replay" : ""))}>
+            {data.replay ? "看案例回放" : "读案例"} · {data.title} →
+          </a>
+        ))}
         {note.data.sourcePath && <a href={sourceUrl(note.data.sourcePath)}>查看实现代码 ↗</a>}
       </aside>
     )}

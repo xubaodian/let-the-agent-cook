@@ -24,7 +24,11 @@ const cases = defineCollection({
     command: z.string().optional(),
     replay: z.string().optional(),
     relatedNote: z.string().optional(),
-  }),
+    relatedNotes: z.array(z.string()).optional(),
+  }).transform(({ relatedNote, relatedNotes = [], ...data }) => ({
+    ...data,
+    relatedNotes: [...new Set(relatedNote ? [relatedNote, ...relatedNotes] : relatedNotes)],
+  })),
 })
 
 export const collections = { notes, cases }
