@@ -49,6 +49,7 @@ class ToolContext:
     get_sandbox: Callable[[], Awaitable[Sandbox]]
     events: RunEvents | None = None
     hook: ToolHook | None = None
+    current_sandbox: Callable[[], Sandbox | None] | None = None
 
 
 class ToolError(RuntimeError):

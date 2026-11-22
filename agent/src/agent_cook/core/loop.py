@@ -1,4 +1,6 @@
+import asyncio
 from dataclasses import asdict
+from functools import partial
 
 from agent_cook.context.budget import PromptBudget
 from agent_cook.context.compaction import ContextLimitError, prepare_context
@@ -7,6 +9,7 @@ from agent_cook.core.types import AgentRunError, AgentSpec, RunResult
 from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelCallTimeout, ModelClient, model_call_deadline
 from agent_cook.protocol.artifacts import ArtifactRef
+from agent_cook.sandbox.interface import SandboxError
 from agent_cook.state.session import Message, Session
 from agent_cook.tools.artifacts import SUBMIT_RESULTS, stale_submissions
 from agent_cook.tools.registry import ToolRegistry
@@ -35,6 +38,7 @@ async def run_loop(
     submitted: dict[str, SubmittedFile] = {}
     delivery_artifacts: set[str] = set()
     needs_submission = require_submission
+    workspace_state = partial(_checkpoint_workspace, tool_context, submitted)
 
     turn_number = 0
     while True:
@@ -42,7 +46,7 @@ async def run_loop(
         try:
             messages = await prepare_context(
                 instructions, session, policy=spec.context_policy, budget=budget,
-                model=model, model_id=spec.model, events=events,
+                model=model, model_id=spec.model, events=events, workspace_state=workspace_state,
             )
         except ContextLimitError as error:
             raise AgentRunError(str(error)) from error
@@ -126,3 +130,26 @@ async def run_loop(
                     events.emit("artifact.created", tool_call_id=call.id, artifact=asdict(artifact))
             if result.ui is not None:
                 events.emit("ui.attached", tool_call_id=call.id, attachment=asdict(result.ui))
+
+
+async def _checkpoint_workspace(context: ToolContext, submitted: dict[str, SubmittedFile]) -> dict[str, object]:
+    limit = 80
+    state: dict[str, object] = {}
+    if submitted:
+        state["submitted_paths"] = list(submitted)[-limit:]
+        state["submitted_paths_truncated"] = len(submitted) > limit
+    sandbox = context.current_sandbox() if context.current_sandbox and "ls" in context.allowed_tools else None
+    if sandbox is None:
+        return state
+    try:
+        async with asyncio.timeout(5):
+            listing = await sandbox.request(
+                "list_files", {"recursive": True, "kind": "file", "max_results": limit}, timeout_seconds=3,
+            )
+        paths = [entry["path"] for entry in listing["entries"]]
+        truncated = listing["truncated"]
+    except (SandboxError, OSError, TimeoutError, KeyError, TypeError):
+        state["workspace_listing_unavailable"] = True
+    else:
+        state.update(workspace_files=paths, workspace_files_truncated=truncated)
+    return state

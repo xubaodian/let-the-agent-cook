@@ -73,6 +73,8 @@ sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 
 对话默认使用 Chat Completions。要启用 Responses，可传入 `--model-api responses`、在任务或用户配置中设置 `model_api`，或设置 `OPENROUTER_MODEL_API`。用模型目录的 `chat_apis` 为指定模型设置协议。 [OpenRouter Responses](https://openrouter.ai/docs/api_reference/responses/overview)
 
+选择对话模型时，请确认其上下文窗口和最大输出满足固定预算。 [上下文预算与压缩](architecture.md#上下文预算与压缩)
+
 ## 构建和发布
 
 PR 的 [Actions](https://github.com/xubaodian/let-the-agent-cook/actions) 构建三端安装包，在对应的托管 runner 安装，验证入口及 Python、Node.js、Chromium。部署方可用仓库变量 `AGENT_COOK_MODELS_JSON` 以 [models.example.json](../models.example.json) 的格式向安装包提供公开候选模型。也可在本地打包时传 `--models models.json`。

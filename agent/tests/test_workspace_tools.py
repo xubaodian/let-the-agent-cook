@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from agent_cook.cli import main
-from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
+from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY, INPUT_TOKEN_LIMIT
 from agent_cook.context.prompts import CHECKPOINT_HEADINGS
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec
@@ -138,7 +138,7 @@ class WorkspaceToolTest(unittest.IsolatedAsyncioTestCase):
             ModelTurn(Message("assistant", tool_calls=(
                 ToolCall("submit-final", "submit_results", '{"paths":["page.txt"]}'),
                 ToolCall("list", "ls", "{}"),
-            )), "tool_calls", prompt_tokens=25_000),
+            )), "tool_calls", prompt_tokens=INPUT_TOKEN_LIMIT),
             ModelTurn(Message(
                 "assistant", "\n\n".join(f"## {heading}\nThe current page was submitted." for heading in CHECKPOINT_HEADINGS),
             ), "stop"),
@@ -158,6 +158,11 @@ class WorkspaceToolTest(unittest.IsolatedAsyncioTestCase):
         requests = model.next_turn.call_args_list
         self.assertIn("Call submit_results to submit the final files", requests[1].kwargs["messages"][-1].content)
         self.assertIn("changed or are missing in the workspace: page.txt", requests[3].kwargs["messages"][-1].content)
+        checkpoint_input = json.loads(requests[4].kwargs["messages"][-1].content)
+        self.assertEqual(checkpoint_input["workspace_state"], {
+            "workspace_files": ["page.txt"], "workspace_files_truncated": False,
+            "submitted_paths": ["page.txt"], "submitted_paths_truncated": False,
+        })
         self.assertEqual(result.text, "Final file submitted.")
         artifact, = result.artifacts
         self.assertEqual((self.directory / artifact.path).read_text(encoding="utf-8"), "final")

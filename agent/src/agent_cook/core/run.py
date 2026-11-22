@@ -3,6 +3,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 
+from agent_cook.context.policy import INPUT_TOKEN_LIMIT, OUTPUT_TOKEN_LIMIT
 from agent_cook.core.delegation import DELEGATE_TOOL, register_delegate
 from agent_cook.core.loop import run_loop
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult, SubagentSpec
@@ -45,7 +46,9 @@ async def run_agent(
     session = session if session is not None else Session()
     session.messages.append(Message(role="user", content=task))
     inputs = dict(input_files) if isinstance(input_files, Mapping) else input_files
-    events.emit("run.started", model=spec.model)
+    events.emit(
+        "run.started", model=spec.model, input_budget=INPUT_TOKEN_LIMIT, max_output_tokens=OUTPUT_TOKEN_LIMIT,
+    )
 
     @asynccontextmanager
     async def open_sandbox():
@@ -70,7 +73,10 @@ async def run_agent(
                         sandbox = await resources.enter_async_context(open_sandbox())
                     return sandbox
 
-            tool_context = ToolContext(events.run_id, frozenset(spec.tool_names), get_sandbox, events, hook)
+            tool_context = ToolContext(
+                events.run_id, frozenset(spec.tool_names), get_sandbox, events, hook,
+                current_sandbox=lambda: sandbox,
+            )
             result = await run_loop(
                 spec, session, model=model, tools=tools, tool_context=tool_context, events=events,
             )

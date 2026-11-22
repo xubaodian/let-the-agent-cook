@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Sequence
 from typing import Any
 
-from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
+from agent_cook.context.policy import INPUT_TOKEN_LIMIT, OUTPUT_TOKEN_LIMIT
 from agent_cook.core.loop import run_loop
 from agent_cook.core.types import AgentRunError, AgentSpec, SubagentSpec
 from agent_cook.events.journal import RunEvents
@@ -49,13 +49,19 @@ def register_delegate(
         spec = AgentSpec(
             model=model_id, instructions=profile.instructions, tool_names=names,
             max_model_turns=min((limit for limit in limits if limit is not None), default=None),
-            context_policy=parent.context_policy if model_id == parent.model else DEFAULT_CONTEXT_POLICY,
+            context_policy=parent.context_policy,
             require_submission=False,
         )
         events = (context.events or RunEvents(run_id=context.run_id)).child()
-        child_context = ToolContext(events.run_id, frozenset(names), context.get_sandbox, events, context.hook)
+        child_context = ToolContext(
+            events.run_id, frozenset(names), context.get_sandbox, events, context.hook,
+            current_sandbox=context.current_sandbox,
+        )
         session = Session([Message(role="user", content=task)])
-        events.emit("run.started", model=spec.model, agent=profile.name)
+        events.emit(
+            "run.started", model=spec.model, agent=profile.name,
+            input_budget=INPUT_TOKEN_LIMIT, max_output_tokens=OUTPUT_TOKEN_LIMIT,
+        )
         deadline = asyncio.timeout(profile.timeout_seconds)
         try:
             async with deadline:

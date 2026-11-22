@@ -1,10 +1,9 @@
 import json
 import unittest
-from dataclasses import replace
 from unittest.mock import AsyncMock
 
 from agent_cook.context.budget import PromptBudget, estimate_messages
-from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
+from agent_cook.context.policy import INPUT_TOKEN_LIMIT
 from agent_cook.context.prompts import CHECKPOINT_HEADINGS, EXECUTION_PROMPT
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec
@@ -61,8 +60,8 @@ class ContextCompactionTest(unittest.IsolatedAsyncioTestCase):
         registry.register(_FIXTURE, handler)
         summary = ModelTurn(Message("assistant", _CHECKPOINT), "stop", prompt_tokens=200)
         model = ScriptedModel(
-            _call(1, prompt_tokens=2000), _call(2, prompt_tokens=2500), _call(3, prompt_tokens=25_000),
-            summary, _call(4, prompt_tokens=25_000), summary, ModelTurn(Message("assistant", "Done."), "stop"),
+            _call(1, prompt_tokens=2000), _call(2, prompt_tokens=2500), _call(3, prompt_tokens=INPUT_TOKEN_LIMIT),
+            summary, _call(4, prompt_tokens=INPUT_TOKEN_LIMIT), summary, ModelTurn(Message("assistant", "Done."), "stop"),
         )
         records = []
 
@@ -100,30 +99,66 @@ class ContextCompactionTest(unittest.IsolatedAsyncioTestCase):
         compacted = [event.data for event in records if event.type == "context.compacted"]
         self.assertEqual([item["covered_messages"] for item in compacted], [3, 5])
         self.assertTrue(all(item["checkpoint"] == _CHECKPOINT for item in compacted))
-        self.assertTrue(all(item["estimated_input_tokens_before"] >= 25_000 for item in compacted))
+        self.assertTrue(all(item["estimated_input_tokens_before"] > INPUT_TOKEN_LIMIT for item in compacted))
 
-    async def test_invalid_checkpoint_preserves_history_while_it_fits(self):
-        policy = replace(DEFAULT_CONTEXT_POLICY, keep_recent_turns=0)
+    async def test_request_at_the_input_limit_does_not_compact(self):
+        observation = Message("tool", "Keep this observation.", tool_call_id="call-1")
+        usage = 360_000 - estimate_messages((_call(1).message, observation))
         registry = ToolRegistry()
-        registry.register(_FIXTURE, AsyncMock(return_value=ToolResult("Keep this observation.")))
-        model = ScriptedModel(
-            _call(1, prompt_tokens=25_000),
-            ModelTurn(Message("assistant", "Malformed summary"), "stop"),
-            ModelTurn(Message("assistant", "Done."), "stop"),
-        )
+        registry.register(_FIXTURE, AsyncMock(return_value=ToolResult(observation.content)))
+        model = ScriptedModel(_call(1, prompt_tokens=usage), ModelTurn(Message("assistant", "Done."), "stop"))
         records = []
+
         await run_agent(
-            AgentSpec("fixture/model", tool_names=(_FIXTURE.name,), context_policy=policy), "Complete the task.",
+            AgentSpec("fixture/model", tool_names=(_FIXTURE.name,)), "Complete the task.",
             model=model, tools=registry, events=RunEvents(records.append),
         )
+
+        self.assertEqual(model.next_turn.await_count, 2)
         last_request = model.next_turn.call_args.kwargs["messages"]
-        self.assertEqual(last_request[-2:], (_call(1).message, Message("tool", "Keep this observation.", tool_call_id="call-1")))
-        self.assertIn("context.compaction_failed", [event.type for event in records])
-        self.assertNotIn("context.compacted", [event.type for event in records])
+        self.assertEqual(last_request[-2:], (_call(1).message, observation))
+        self.assertFalse(any(event.type.startswith("context.compact") for event in records))
+
+    async def test_over_budget_run_recovers_from_an_invalid_checkpoint_once(self):
+        observation = Message("tool", "Saved the current slides.\n" + "A" * 180_000, tool_call_id="call-1")
+        usage = 360_001 - estimate_messages((_call(1).message, observation))
+        invalid = ModelTurn(Message("assistant", "A summary without the required sections."), "stop")
+        valid = ModelTurn(Message("assistant", _CHECKPOINT), "stop")
+        for repaired in (True, False):
+            with self.subTest(repaired=repaired):
+                registry = ToolRegistry()
+                registry.register(_FIXTURE, AsyncMock(return_value=ToolResult(observation.content)))
+                model = ScriptedModel(
+                    _call(1, prompt_tokens=usage), invalid, valid if repaired else invalid,
+                    ModelTurn(Message("assistant", "Done."), "stop"),
+                )
+                records = []
+                run = run_agent(
+                    AgentSpec("fixture/model", tool_names=(_FIXTURE.name,)),
+                    "Build the deck.", model=model, tools=registry, events=RunEvents(records.append),
+                )
+                if repaired:
+                    self.assertEqual((await run).text, "Done.")
+                    self.assertEqual(model.next_turn.await_count, 4)
+                else:
+                    with self.assertRaisesRegex(AgentRunError, "invalid checkpoint"):
+                        await run
+                    self.assertEqual(model.next_turn.await_count, 3)
+                started = next(event for event in records if event.type == "context.compaction_started")
+                self.assertEqual(started.data["estimated_input_tokens"], 360_001)
+                attempts = [event for event in records if event.type == "context.compaction_retry"]
+                self.assertEqual([event.data["reason"] for event in attempts], ["invalid_checkpoint"])
+                repair = json.loads(model.next_turn.call_args_list[2].kwargs["messages"][-1].content)
+                self.assertEqual(repair["task"], "Build the deck.")
+                self.assertIn("format_repair", repair)
+                self.assertTrue(repair["completed_history"][-1]["content"].startswith("Saved the current slides."))
+                self.assertIn("Middle omitted", repair["completed_history"][-1]["content"])
+                outcome = "context.compacted" if repaired else "context.compaction_failed"
+                self.assertEqual(sum(event.type == outcome for event in records), 1)
 
     async def test_large_observation_can_be_compacted_before_the_next_request(self):
         registry = ToolRegistry()
-        registry.register(_FIXTURE, AsyncMock(return_value=ToolResult("A" * 100_000)))
+        registry.register(_FIXTURE, AsyncMock(return_value=ToolResult("A" * 1_100_000)))
         model = ScriptedModel(
             _call(1, prompt_tokens=2000), ModelTurn(Message("assistant", _CHECKPOINT), "stop"),
             ModelTurn(Message("assistant", "Done."), "stop"),
@@ -134,12 +169,12 @@ class ContextCompactionTest(unittest.IsolatedAsyncioTestCase):
         )
         summary_request = model.next_turn.call_args_list[1].kwargs["messages"]
         self.assertIn("Middle omitted for checkpoint input", summary_request[-1].content)
-        self.assertLess(estimate_messages(summary_request), DEFAULT_CONTEXT_POLICY.input_budget)
+        self.assertLess(estimate_messages(summary_request), INPUT_TOKEN_LIMIT)
         self.assertEqual(result.text, "Done.")
         self.assertTrue(model.next_turn.call_args.kwargs["messages"][-1].content.endswith(_CHECKPOINT))
 
     async def test_oversized_task_reports_budget_before_calling_the_model(self):
         model = ScriptedModel()
-        with self.assertRaisesRegex(AgentRunError, "exceeds the configured budget"):
-            await run_agent(AgentSpec("fixture/model"), "A" * 100_000, model=model)
+        with self.assertRaisesRegex(AgentRunError, "exceeds the 360000-token input budget"):
+            await run_agent(AgentSpec("fixture/model"), "A" * 1_100_000, model=model)
         model.next_turn.assert_not_awaited()

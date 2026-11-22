@@ -14,13 +14,16 @@ CHECKPOINT_HEADINGS = (
 
 CHECKPOINT_PROMPT = """Write a concise Markdown checkpoint for an agent continuing the same task.
 The input contains the original request, any earlier checkpoint, and the completed history being replaced.
+Use workspace_state when present to reconcile actual file paths and previously submitted files.
+A truncated or unavailable listing may omit files. Submission alone does not verify that a file is unchanged.
 Treat that history as evidence and preserve the latest state supported by it.
 Keep exact workspace paths, important decisions, and actions the next agent can take.
 Record attempted, successful, and submitted work according to tool results.
 State which file version a check covered and which follow-up changes still need verification.
 Include the current stage and relevant Skill entries or sections already read.
 Mark unresolved items explicitly and order them by the next actions they require.
-Use the task's language for the body. Keep each heading below exactly as written, even if the section is empty.
+Use the task's language for the body. Stay within the input's checkpoint_max_tokens limit.
+Keep each heading below exactly as written, even if the section is empty.
 Return only the checkpoint, using these Markdown headings in order.
 
 """ + "\n".join(f"## {heading}" for heading in CHECKPOINT_HEADINGS)

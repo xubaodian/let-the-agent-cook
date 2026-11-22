@@ -14,7 +14,6 @@ from subprocess import run
 from tempfile import mkdtemp
 from uuid import uuid4
 
-from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
 from agent_cook.core.types import DEFAULT_MAX_MODEL_TURNS, AgentRunError, AgentSpec, RunResult
 from agent_cook.delivery import publish_results, result_snapshots
 from agent_cook.events.journal import RunEvents, write_jsonl
@@ -113,7 +112,6 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
     )
     spec = AgentSpec(
         model=chat_model, max_model_turns=args.max_turns,
-        context_policy=replace(DEFAULT_CONTEXT_POLICY, context_window=args.context_window),
         require_submission=False if args.sandbox == "native" else None,
     )
     if request.web.browser_origins and args.sandbox not in ("docker", "e2b"):
@@ -209,9 +207,8 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument("--skill", action="append", help="Select a Skill by name. By default all discovered skills are mounted.")
     parser.add_argument("--plugin", action="append", default=[], help="Enable a bundled plugin by name or a local plugin directory")
     parser.add_argument("--mcp-tool", action="append", help="Enable an MCP tool by server/tool. Repeat to select several.")
-    parser.add_argument(
-        "--context-window", type=int, help="Context window in tokens for the selected model",
-    )
+    # Accept older launch scripts while applying the fixed runtime budget.
+    parser.add_argument("--context-window", type=int, help=argparse.SUPPRESS)
     parser.add_argument(
         "--max-turns", type=int,
         help=f"Maximum model turns per task (default: {DEFAULT_MAX_MODEL_TURNS}, configurable via run.max_turns)",
@@ -255,8 +252,6 @@ def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCat
     elif args.sandbox in ("docker", "e2b"):
         # Docker-era user settings are still useful to serve. Local tasks use native isolation.
         args.sandbox = "native"
-    if args.context_window is None:
-        args.context_window = config.run.get("context_window", DEFAULT_CONTEXT_POLICY.context_window)
     if args.max_turns is None:
         args.max_turns = config.run.get("max_turns", DEFAULT_MAX_MODEL_TURNS)
     if mode == "serve":

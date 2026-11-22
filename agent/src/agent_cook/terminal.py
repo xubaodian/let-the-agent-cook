@@ -60,7 +60,20 @@ def prompt_reader(directory: Path):
 
 
 def show_progress(event: RunEvent) -> None:
-    if event.type == "tool.started":
+    if event.type == "run.started" and event.parent_run_id is None and "input_budget" in event.data:
+        print(
+            f"  Compact above {event.data['input_budget']:,} input tokens. "
+            f"Each model call allows up to {event.data['max_output_tokens']:,} output tokens.",
+            file=sys.stderr,
+        )
+    elif event.type == "tool.started":
         print(f"  {event.data['name']} …", file=sys.stderr)
-    if event.type == "context.compacted":
+    elif event.type == "context.compaction_started":
+        print(f"  Compacting context ({event.data['estimated_input_tokens']:,} estimated input tokens).", file=sys.stderr)
+    elif event.type == "context.compaction_retry":
+        print("  Retrying the context checkpoint.", file=sys.stderr)
+    elif event.type == "context.compaction_failed":
+        reason = str(event.data["reason"]).replace("_", " ")
+        print(f"  Context compaction failed ({reason}).", file=sys.stderr)
+    elif event.type == "context.compacted":
         print("  Compacted conversation context.", file=sys.stderr)
