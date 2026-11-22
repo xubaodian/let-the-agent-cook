@@ -13,6 +13,7 @@ from textwrap import dedent
 from unittest.mock import AsyncMock, patch
 
 from agent_cook.cli import main
+from agent_cook.sandbox.native.executor import environment, execute
 from agent_cook.sandbox.native.factory import NativeSandboxFactory
 from agent_cook.settings import DATA
 from test_cli_entry import ENV, sdk, tool
@@ -135,6 +136,27 @@ class NativeDeliveryTest(unittest.TestCase):
 
 @unittest.skipUnless(_RUN_NATIVE, "Set AGENT_COOK_TEST_NATIVE=1 on a host with native isolation.")
 class NativeBoundaryTest(unittest.IsolatedAsyncioTestCase):
+    @unittest.skipUnless(sys.platform == "darwin", "Seatbelt applies only on macOS.")
+    async def test_office_registration_keeps_application_handoff_denied(self):
+        source = dedent("""
+            import ctypes
+            import os
+
+            check = ctypes.CDLL("/usr/lib/libsandbox.1.dylib").sandbox_check
+            check.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
+            for operation in (b"lsopen", b"job-creation", b"appleevent-send"):
+                assert check(os.getpid(), operation, 0) == 1, operation
+        """)
+        factory = NativeSandboxFactory()
+        async with factory.open("office-policy") as sandbox:
+            python, reads = await sandbox._runtime("python")
+            result = await execute(
+                [str(python), "-I", "-c", source],
+                root=sandbox.root, cwd=sandbox.workspace.root, reads=reads,
+                env=environment(sandbox.scratch, (python.parent,)), timeout=10, office=True,
+            )
+            self.assertEqual(result.exit_code, 0, result.stderr)
+
     async def test_renders_pptx_in_the_workspace(self):
         from pptx import Presentation
 
@@ -150,8 +172,9 @@ class NativeBoundaryTest(unittest.IsolatedAsyncioTestCase):
                 "soffice", "--headless", "--convert-to", "pdf:impress_pdf_Export",
                 "--outdir", ".", "汇报 样例.pptx",
             ], cwd=".", timeout_seconds=60)
-            self.assertEqual(result.exit_code, 0, result.stderr)
-            self.assertTrue((await sandbox.get_file("汇报 样例.pdf")).startswith(b"%PDF"))
+            diagnostics = f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            self.assertEqual(result.exit_code, 0, diagnostics)
+            self.assertTrue((await sandbox.get_file("汇报 样例.pdf")).startswith(b"%PDF"), diagnostics)
             verify = await sandbox.exec([
                 "python", "-c",
                 dedent("""

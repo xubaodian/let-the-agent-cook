@@ -49,7 +49,7 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...], *, office: b
     mac_services = _MAC_SERVICES
     if office:
         # The stock macOS build initializes AppKit even for headless conversions.
-        mac_services += ("com.apple.coreservices.launchservicesd",)
+        mac_services += ("com.apple.coreservices.launchservicesd", "com.apple.windowserver.active")
     services = " ".join(f'(global-name "{service}")' for service in mac_services)
     writable = f"(subpath {json.dumps(str(root), ensure_ascii=False)})"
     profile = f"""(version 1)
