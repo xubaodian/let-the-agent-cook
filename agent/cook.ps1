@@ -100,8 +100,10 @@ try {
     if (Test-Path -LiteralPath $envFile -PathType Leaf) {
         $uv = Find-Uv
         if (!$uv) { throw "Run install.cmd from '$project' to restore uv for .env loading." }
+        # Escape both path separators and whitespace for uv's env-file parser.
+        $envArgument = $envFile -replace '[\s\\]', '\$&'
         $env:AGENT_COOK_UV = $uv
-        & $uv run --project $project --no-sync --env-file $envFile $python -I @entry @words
+        & $uv run --project $project --no-sync --env-file $envArgument $python -I @entry @words
     } else {
         & $python -I @entry @words
     }
