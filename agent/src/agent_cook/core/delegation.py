@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from agent_cook.context.policy import DEFAULT_CONTEXT_POLICY
@@ -16,6 +16,7 @@ DELEGATE_TOOL = "delegate"
 
 def register_delegate(
     registry: ToolRegistry, subagents: Sequence[SubagentSpec], parent: AgentSpec, model: ModelClient,
+    model_context_windows: Mapping[str, int] | None = None,
 ) -> None:
     profiles = {profile.name: profile for profile in subagents}
     if len(profiles) != len(subagents):
@@ -45,17 +46,23 @@ def register_delegate(
             if name in context.allowed_tools and name != DELEGATE_TOOL
         )
         model_id = profile.model or parent.model
+        policy = parent.context_policy if model_id == parent.model else DEFAULT_CONTEXT_POLICY
+        if model_id != parent.model and model_context_windows and (window := model_context_windows.get(model_id)):
+            policy = policy.for_model(window)
         limits = (parent.max_model_turns, profile.max_model_turns)
         spec = AgentSpec(
             model=model_id, instructions=profile.instructions, tool_names=names,
             max_model_turns=min((limit for limit in limits if limit is not None), default=None),
-            context_policy=parent.context_policy if model_id == parent.model else DEFAULT_CONTEXT_POLICY,
+            context_policy=policy,
             require_submission=False,
         )
         events = (context.events or RunEvents(run_id=context.run_id)).child()
         child_context = ToolContext(events.run_id, frozenset(names), context.get_sandbox, events, context.hook)
         session = Session([Message(role="user", content=task)])
-        events.emit("run.started", model=spec.model, agent=profile.name)
+        events.emit(
+            "run.started", model=spec.model, agent=profile.name, context_window=policy.context_window,
+            input_budget=policy.input_budget, compaction_threshold=policy.compaction_threshold,
+        )
         deadline = asyncio.timeout(profile.timeout_seconds)
         try:
             async with deadline:

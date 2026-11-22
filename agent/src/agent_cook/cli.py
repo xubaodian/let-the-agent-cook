@@ -111,9 +111,11 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
         args.image_model, request.image_model, "OPENROUTER_IMAGE_MODEL",
         getattr(args, "session_image_model", None) or catalog.image.default,
     )
+    policy = DEFAULT_CONTEXT_POLICY
+    if args.context_window is not None:
+        policy = replace(policy, context_window=args.context_window)
     spec = AgentSpec(
-        model=chat_model, max_model_turns=args.max_turns,
-        context_policy=replace(DEFAULT_CONTEXT_POLICY, context_window=args.context_window),
+        model=chat_model, max_model_turns=args.max_turns, context_policy=policy,
         require_submission=False if args.sandbox == "native" else None,
     )
     if request.web.browser_origins and args.sandbox not in ("docker", "e2b"):
@@ -155,6 +157,7 @@ def _prepare(args: argparse.Namespace, request: RunRequest, catalog: ModelCatalo
         "image_model": image_model, "skills": skills, "plugins": plugins,
         "mcp_tools": request.mcp_tools, "web": request.web, "browser_factory": browser_factory,
         "exa_api_key": args.config.api_key("exa"),
+        "discover_context_window": args.context_window is None,
     }
 
 
@@ -210,7 +213,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument("--plugin", action="append", default=[], help="Enable a bundled plugin by name or a local plugin directory")
     parser.add_argument("--mcp-tool", action="append", help="Enable an MCP tool by server/tool. Repeat to select several.")
     parser.add_argument(
-        "--context-window", type=int, help="Context window in tokens for the selected model",
+        "--context-window", type=int, help="Override the model context window in tokens (default: OpenRouter model catalog)",
     )
     parser.add_argument(
         "--max-turns", type=int,
@@ -256,7 +259,7 @@ def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCat
         # Docker-era user settings are still useful to serve. Local tasks use native isolation.
         args.sandbox = "native"
     if args.context_window is None:
-        args.context_window = config.run.get("context_window", DEFAULT_CONTEXT_POLICY.context_window)
+        args.context_window = config.run.get("context_window")
     if args.max_turns is None:
         args.max_turns = config.run.get("max_turns", DEFAULT_MAX_MODEL_TURNS)
     if mode == "serve":

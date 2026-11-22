@@ -121,6 +121,45 @@ class ContextCompactionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("context.compaction_failed", [event.type for event in records])
         self.assertNotIn("context.compacted", [event.type for event in records])
 
+    async def test_over_budget_run_recovers_from_an_invalid_checkpoint_once(self):
+        observation = Message("tool", "Saved the current slides.\n" + "A" * 85_000, tool_call_id="call-1")
+        usage = 31_248 - estimate_messages((_call(1).message, observation))
+        self.assertGreater(usage, 1_000)
+        self.assertLess(usage, 5_000)
+        invalid = ModelTurn(Message("assistant", "A summary without the required sections."), "stop")
+        valid = ModelTurn(Message("assistant", _CHECKPOINT), "stop")
+        for repaired in (True, False):
+            with self.subTest(repaired=repaired):
+                registry = ToolRegistry()
+                registry.register(_FIXTURE, AsyncMock(return_value=ToolResult(observation.content)))
+                model = ScriptedModel(
+                    _call(1, prompt_tokens=usage), invalid, valid if repaired else invalid,
+                    ModelTurn(Message("assistant", "Done."), "stop"),
+                )
+                records = []
+                run = run_agent(
+                    AgentSpec("fixture/model", tool_names=(_FIXTURE.name,)),
+                    "Build the deck.", model=model, tools=registry, events=RunEvents(records.append),
+                )
+                if repaired:
+                    self.assertEqual((await run).text, "Done.")
+                    self.assertEqual(model.next_turn.await_count, 4)
+                else:
+                    with self.assertRaisesRegex(AgentRunError, "invalid checkpoint"):
+                        await run
+                    self.assertEqual(model.next_turn.await_count, 3)
+                started = next(event for event in records if event.type == "context.compaction_started")
+                self.assertEqual(started.data["estimated_input_tokens"], 31_248)
+                attempts = [event for event in records if event.type == "context.compaction_retry"]
+                self.assertEqual([event.data["reason"] for event in attempts], ["invalid_checkpoint"])
+                repair = json.loads(model.next_turn.call_args_list[2].kwargs["messages"][-1].content)
+                self.assertEqual(repair["task"], "Build the deck.")
+                self.assertIn("format_repair", repair)
+                self.assertTrue(repair["completed_history"][-1]["content"].startswith("Saved the current slides."))
+                self.assertIn("Middle omitted", repair["completed_history"][-1]["content"])
+                outcome = "context.compacted" if repaired else "context.compaction_failed"
+                self.assertEqual(sum(event.type == outcome for event in records), 1)
+
     async def test_large_observation_can_be_compacted_before_the_next_request(self):
         registry = ToolRegistry()
         registry.register(_FIXTURE, AsyncMock(return_value=ToolResult("A" * 100_000)))
