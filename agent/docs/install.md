@@ -6,9 +6,13 @@
 
 源码安装同时准备工作区 Python 依赖、Node.js 和 npm，以及 Playwright Chromium，后续启动复用用户缓存。用 `./install --with-office` 或 `.\install.cmd --with-office` 加装 LibreOffice，以便把 PPT 转成真实预览。加装在 macOS 使用 Homebrew，在 Windows 使用 WinGet，在 Ubuntu 使用 APT。平台安装工具会按需提示权限。 [预装依赖与 PPT 预览](workspace-tools.md#办公与数据处理依赖)
 
+源码路径可以包含空格和中文。从其他目录调用时，给脚本路径加引号，例如 `bash "$HOME/Downloads/Agent Cook/agent/install"`。ZIP 解压后若执行权限丢失，可在 `agent/` 下用 `bash ./install` 安装、用 `bash ./cook` 启动。移动源码目录后，在新位置重新运行安装即可重建虚拟环境。
+
 ## 全局安装与更新
 
 在新版源码的 `agent/` 目录执行 `./install --global`（macOS / Linux）或 `.\install.cmd --global`（Windows）。安装器在用户目录准备独立的 CLI，并尝试把命令入口加入用户 PATH。安装后打开新终端，从要处理文件的目录运行 `agent-cook`。已经保存的 `agent-cook.json` 会继续读取。源码目录已有的 `.env` 在首次全局安装时复制一份到版本目录的上一级，后续版本共用该文件。 [uv PATH 设置](https://docs.astral.sh/uv/reference/cli/#uv-tool-update-shell)
+
+如果当前终端尚未读到新的 PATH，可以直接复制安装结束时 `Start now with` 后的命令启动。
 
 | 系统 | 全局源码安装目录 |
 | --- | --- |

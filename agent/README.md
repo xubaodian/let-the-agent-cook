@@ -26,7 +26,7 @@ Agent Cook 是一个接入 OpenRouter 的终端助手。你可以用它对话、
 
 1. 检查 agent-cook --help。如果命令可用，报告它的路径并结束。
 2. 首次安装时，下载 https://github.com/xubaodian/let-the-agent-cook/archive/refs/heads/main.zip 并解压到临时目录。
-3. 进入解压后的 agent/ 目录。在 macOS 或 Linux 执行 ./install --global。在 Windows 执行 .\install.cmd --global。
+3. 进入解压后的 agent/ 目录。在 macOS 或 Linux 执行 bash ./install --global。在 Windows 执行 .\install.cmd --global。
 4. 安装后回到原目录，运行 agent-cook --list-plugins 验证。若当前终端还未加载新的 PATH，用新安装入口的绝对路径运行同一检查。
 5. 告诉我怎样从新终端启动 Agent Cook。首次启动时由我完成 OpenRouter 授权。
 ```

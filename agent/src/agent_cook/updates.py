@@ -1,5 +1,6 @@
 import argparse
 import os
+import shlex
 import shutil
 import sqlite3
 import stat
@@ -168,6 +169,12 @@ def _install_launcher(root: Path) -> None:
 
 def _register_path(root: Path, revision: str) -> None:
     bin_dir = root / "bin"
+    if sys.platform == "win32":
+        launcher = str(bin_dir / "agent-cook.cmd").replace("'", "''")
+        direct = f"& '{launcher}'"
+    else:
+        direct = shlex.quote(str(bin_dir / "agent-cook"))
+    print(f"Start now with {direct}")
     versions = root / "versions"
     candidates = [project / ".agent-cook/tools" / _UV for project in (versions / revision, versions)]
     uv = next((str(path) for path in candidates if path.is_file()), None) or uv_executable()
@@ -179,7 +186,7 @@ def _register_path(root: Path, revision: str) -> None:
             return
         except (OSError, CalledProcessError, TimeoutExpired):
             pass
-    print(f"Add '{bin_dir}' to your user PATH, then run agent-cook.")
+    print(f"Add '{bin_dir}' to your user PATH to use agent-cook.")
 
 
 def manage_source_install(

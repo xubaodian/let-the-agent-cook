@@ -26,9 +26,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
-        working-directory: agent
+        working-directory: 'Agent Cook 源码/agent'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: 'Agent Cook 源码'
       - name: Install and restart the source CLI on Windows
         if: runner.os == 'Windows' && !inputs.signed
         shell: cmd
@@ -40,8 +42,13 @@ jobs:
         if: runner.os != 'Windows' && !inputs.signed
         shell: bash
         run: |
-          ./install --list-models
-          ./cook --list-models
+          source_dir="$(pwd -P)"
+          # Some ZIP extractors omit POSIX execute permissions.
+          chmod -x "$source_dir/cook"
+          trap 'chmod +x "$source_dir/cook"' EXIT
+          cd ../..
+          CDPATH="$PWD" bash "Agent Cook 源码/agent/install" --list-models
+          CDPATH="$PWD" PYTHONHOME="$PWD/missing Python" bash "Agent Cook 源码/agent/cook" --list-models
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - name: Install Ubuntu native isolation
         if: runner.os == 'Linux'
