@@ -137,25 +137,42 @@ class NativeDeliveryTest(unittest.TestCase):
 @unittest.skipUnless(_RUN_NATIVE, "Set AGENT_COOK_TEST_NATIVE=1 on a host with native isolation.")
 class NativeBoundaryTest(unittest.IsolatedAsyncioTestCase):
     @unittest.skipUnless(sys.platform == "darwin", "Seatbelt applies only on macOS.")
-    async def test_office_registration_keeps_application_handoff_denied(self):
+    async def test_office_profile_limits_macos_ipc(self):
         source = dedent("""
             import ctypes
             import os
+            import socket
+            import sys
 
             check = ctypes.CDLL("/usr/lib/libsandbox.1.dylib").sandbox_check
             check.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
             for operation in (b"lsopen", b"job-creation", b"appleevent-send"):
                 assert check(os.getpid(), operation, 0) == 1, operation
+            with socket.socket(socket.AF_UNIX) as server, socket.socket(socket.AF_UNIX) as client:
+                address = os.path.join(os.environ["TMPDIR"], "test.sock")
+                server.bind(address)
+                server.listen()
+                client.connect(address)
+            with socket.socket(socket.AF_UNIX) as client:
+                try:
+                    client.connect(sys.argv[1])
+                except PermissionError:
+                    pass
+                else:
+                    raise AssertionError("Office profile can reach an unrelated host socket")
         """)
-        factory = NativeSandboxFactory()
-        async with factory.open("office-policy") as sandbox:
-            python, reads = await sandbox._runtime("python")
-            result = await execute(
-                [str(python), "-I", "-c", source],
-                root=sandbox.root, cwd=sandbox.workspace.root, reads=reads,
-                env=environment(sandbox.scratch, (python.parent,)), timeout=10, office=True,
-            )
-            self.assertEqual(result.exit_code, 0, result.stderr)
+        with TemporaryDirectory(dir="/private/tmp") as outside, socket.socket(socket.AF_UNIX) as server:
+            unrelated = str(Path(outside) / "test.sock")
+            server.bind(unrelated)
+            server.listen()
+            async with NativeSandboxFactory().open("office-policy") as sandbox:
+                python, reads = await sandbox._runtime("python")
+                result = await execute(
+                    [str(python), "-I", "-c", source, unrelated],
+                    root=sandbox.root, cwd=sandbox.workspace.root, reads=reads,
+                    env=environment(sandbox.scratch, (python.parent,)), timeout=10, office_scratch=sandbox.scratch,
+                )
+                self.assertEqual(result.exit_code, 0, result.stderr)
 
     async def test_renders_pptx_in_the_workspace(self):
         from pptx import Presentation

@@ -35,7 +35,7 @@ def environment(scratch: Path, paths: tuple[Path, ...]) -> dict[str, str]:
     return result
 
 
-def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...], *, office: bool) -> list[str]:
+def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...], *, office_scratch: Path | None) -> list[str]:
     executable = Path("/usr/bin/sandbox-exec")
     if not executable.is_file():
         raise SandboxError("This macOS installation does not provide the Seatbelt process launcher.")
@@ -47,9 +47,14 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...], *, office: b
         "", "apache/", "apache2/", "httpd/", "httpd/conf/",
     ))
     mac_services = _MAC_SERVICES
-    if office:
+    office_ipc = ""
+    if office_scratch is not None:
         # The stock macOS build initializes AppKit even for headless conversions.
         mac_services += ("com.apple.coreservices.launchservicesd", "com.apple.windowserver.active")
+        scratch = json.dumps(str(office_scratch), ensure_ascii=False)
+        office_ipc = f"""(allow system-socket (socket-domain AF_UNIX))
+(allow network-bind (local unix-socket (subpath {scratch})))
+(allow network-outbound (remote unix-socket (subpath {scratch})))"""
     services = " ".join(f'(global-name "{service}")' for service in mac_services)
     writable = f"(subpath {json.dumps(str(root), ensure_ascii=False)})"
     profile = f"""(version 1)
@@ -69,6 +74,7 @@ def _seatbelt(argv: list[str], root: Path, reads: tuple[Path, ...], *, office: b
 (deny lsopen job-creation appleevent-send)
 (allow iokit-open (iokit-registry-entry-class "RootDomainUserClient"))
 (allow ipc-posix-shm-read-data (ipc-posix-name "apple.shm.notification_center"))
+{office_ipc}
 """
     return [str(executable), "-p", profile, "--", *argv]
 
@@ -149,7 +155,7 @@ async def _posix(
 async def execute(
     argv: list[str], *, root: Path, cwd: Path, reads: tuple[Path, ...],
     env: dict[str, str], timeout: float, payload: bytes | None = None, maximum: int = MAX_COMMAND_OUTPUT,
-    browser_controller: bool = False, office: bool = False,
+    browser_controller: bool = False, office_scratch: Path | None = None,
 ) -> CommandResult:
     if sys.platform == "win32":
         from agent_cook.sandbox.native.windows import run
@@ -167,7 +173,7 @@ async def execute(
                 await pending
             raise
     if sys.platform == "darwin":
-        command = _seatbelt(argv, root, reads, office=office)
+        command = _seatbelt(argv, root, reads, office_scratch=office_scratch)
     elif sys.platform.startswith("linux"):
         command = _bubblewrap(argv, root, cwd, reads)
     else:

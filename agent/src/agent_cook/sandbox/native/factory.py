@@ -121,14 +121,17 @@ class NativeSandbox:
             # Node's realpath traversal starts at the drive root, outside the AppContainer's access.
             env["NODE_OPTIONS"] = "--preserve-symlinks --preserve-symlinks-main"
         program = argv[0].lower() if sys.platform == "win32" else argv[0]
-        office = program in _OFFICE_COMMANDS
-        if office:
+        office_scratch = None
+        if program in _OFFICE_COMMANDS:
             # Give the renderer a workspace profile distinct from the user's desktop session.
             prefix.append(f"-env:UserInstallation={(self.scratch / 'libreoffice').as_uri()}")
             env["SAL_USE_VCLPLUGIN"] = "svp"
+            if sys.platform == "darwin":
+                office_scratch = self.scratch
+                env["OSL_SOCKET_PATH"] = str(office_scratch)
         return await execute(
             [*prefix, *argv[1:]], root=self.root, cwd=directory, reads=reads,
-            env=env, timeout=timeout, payload=payload, office=office,
+            env=env, timeout=timeout, payload=payload, office_scratch=office_scratch,
         )
 
     async def exec(
@@ -254,7 +257,9 @@ class NativeSandboxFactory:
 
     @asynccontextmanager
     async def open(self, run_id: str):
-        with TemporaryDirectory(prefix="agent-cook-") as path:
+        # LibreOffice's local socket name must fit within the macOS sockaddr_un limit.
+        temporary_base = "/private/tmp" if sys.platform == "darwin" else None
+        with TemporaryDirectory(prefix="agent-cook-", dir=temporary_base) as path:
             yield NativeSandbox(Path(path))
 
     async def probe(self, *, runtime: bool = False) -> None:
