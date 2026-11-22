@@ -6,11 +6,12 @@
 | --- | --- |
 | [site/](site/) | 个人站、文章、案例和可交互回放 |
 | [agent/](agent/) | Agent Cook 的 CLI、服务端、安装、测试和示例 |
-| [projects/](projects/) | 独立项目，例如 vLLM 服务、推理性能或其他实验 |
+
+新增可独立运行的项目时，直接在仓库根目录创建同级目录，例如在开始 vLLM 服务实验时添加 `vllm-serving/`。每个项目有自己的依赖、运行说明和验证方式。
 
 ## 启动
 
 在仓库里查看各自的运行说明。
 
 - [安装和使用 Agent Cook](agent/README.md)
-- [运行站点、写文章或发布案例](site/README.md)
+- [本地预览、新建内容和自动发布站点](site/README.md)
