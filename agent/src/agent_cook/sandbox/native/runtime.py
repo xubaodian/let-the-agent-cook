@@ -143,7 +143,7 @@ async def python_runtime() -> tuple[Path, tuple[Path, ...]]:
                 "--relocatable", str(target), cwd=target.parent,
             )
             await run_installer(
-                uv, "--no-config", "pip", "install", "--only-binary", ":all:",
+                uv, "--no-config", "pip", "install", "--only-binary", ":all:", "--link-mode", "copy",
                 "--python", str(target / relative), "-r", str(_REQUIREMENTS), cwd=target.parent,
             )
             try:

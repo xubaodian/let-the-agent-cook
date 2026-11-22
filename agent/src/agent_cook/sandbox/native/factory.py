@@ -74,6 +74,10 @@ class NativeSandbox:
             office = office_executable()
             if office is None:
                 raise SandboxError("LibreOffice is unavailable. Run agent-cook setup-runtime --with-office to prepare it.")
+            if sys.platform == "win32":
+                program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files")).resolve()
+                if office.is_relative_to(program_files):
+                    return office, ()
             config = (Path("/etc/fonts"),) if sys.platform.startswith("linux") else ()
             return office, (office.parent.parent, *config)
         if sys.platform == "win32":
@@ -108,6 +112,9 @@ class NativeSandbox:
             packages = self.root / PYTHON_PACKAGES
             if packages.is_dir():
                 env["PYTHONPATH"] = str(packages)
+        if sys.platform == "win32" and executable == self._node:
+            # Node's realpath traversal starts at the drive root, outside the AppContainer's access.
+            env["NODE_OPTIONS"] = "--preserve-symlinks --preserve-symlinks-main"
         if executable.name.lower() in ("soffice", "soffice.com", "soffice.exe"):
             # Give the renderer a workspace profile distinct from the user's desktop session.
             prefix.append(f"-env:UserInstallation={(self.scratch / 'libreoffice').as_uri()}")

@@ -58,7 +58,7 @@ def python_install_args(uv: str, python: Path, staging: Path, packages: dict[str
     requirements.write_text("\n".join(packages.values()) + "\n", encoding="utf-8")
     return [
         uv, "--no-config", "--no-cache", "--no-progress", "--no-python-downloads", "pip", "install",
-        "--only-binary", ":all:", "--default-index", "https://pypi.org/simple",
+        "--only-binary", ":all:", "--link-mode", "copy", "--default-index", "https://pypi.org/simple",
         "--python", str(python), "--target", str(staging / PYTHON_PACKAGES), "-r", str(requirements),
     ]
 
