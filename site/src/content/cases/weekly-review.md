@@ -9,7 +9,7 @@ command: |
   cd agent
   ./cook demo combined-review
 replay: weekly-review
-relatedNote: tool-call
+relatedNotes: [tool-call, context-compaction]
 ---
 
 ## 任务怎么拆

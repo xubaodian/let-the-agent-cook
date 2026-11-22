@@ -13,7 +13,8 @@
     "preview": "astro preview",
     "test": "playwright test",
     "new": "node scripts/new-content.mjs",
-    "test:content": "node --test scripts/new-content.test.mjs"
+    "test:content": "node --test scripts/new-content.test.mjs scripts/import-replay.test.mjs",
+    "replay:import": "node scripts/import-replay.mjs"
   },
   "dependencies": {
     "@astrojs/react": "7.1.9",

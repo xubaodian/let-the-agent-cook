@@ -23,7 +23,9 @@ test("home, reading lists, article and case link together", async ({ page }) => 
   await expect(page).toHaveURL(/\/cases\/weekly-review\/#replay$/)
   await expect(page.getByRole("link", { name: /查看示例源码/ })).toHaveAttribute("href", /\/agent\/examples\/combined-review\/run\.json$/)
   await expect(page.getByText("./cook demo combined-review", { exact: false })).toBeVisible()
-  await expect(page.getByRole("link", { name: /了解原理/ })).toHaveAttribute("href", /\/notes\/tool-call\/$/)
+  await expect(page.getByRole("link", { name: /了解原理.*模型发出 Tool Call/ })).toHaveAttribute("href", /\/notes\/tool-call\/$/)
+  await page.getByRole("link", { name: /了解原理.*上下文压缩时/ }).click()
+  await expect(page.getByRole("link", { name: /看案例回放/ })).toHaveAttribute("href", /\/cases\/weekly-review\/#replay$/)
 
   await nav.getByRole("link", { name: "做出来" }).click()
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("做出来")
