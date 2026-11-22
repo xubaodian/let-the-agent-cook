@@ -1,0 +1,34 @@
+---
+import type { InferGetStaticPropsType } from "astro"
+import { getCollection, render } from "astro:content"
+import SiteLayout from "../../layouts/SiteLayout.astro"
+import { readableDate, sourceUrl, url } from "../../lib/links"
+
+export async function getStaticPaths() {
+  const [notes, cases] = await Promise.all([getCollection("notes"), getCollection("cases")])
+  return notes.map((note) => ({
+    params: { id: note.id },
+    props: { note, related: cases.filter((entry) => entry.data.relatedNote === note.id) },
+  }))
+}
+type Props = InferGetStaticPropsType<typeof getStaticPaths>
+const { note, related } = Astro.props
+const { Content } = await render(note)
+---
+<SiteLayout title={note.data.title} description={note.data.description} current="notes">
+  <article class="container document">
+    <a class="back-link" href={url("notes/")}>← 想明白</a>
+    <header class="page-heading">
+      <p class="metadata">{note.data.topic} <span aria-hidden="true">·</span> <time datetime={note.data.date.toISOString().slice(0, 10)}>{readableDate(note.data.date)}</time></p>
+      <h1>{note.data.title}</h1>
+      <p>{note.data.description}</p>
+    </header>
+    <div class="prose"><Content /></div>
+    {(note.data.sourcePath || related.length > 0) && (
+      <aside class="related">
+        {related.map(({ id, data }) => <a href={url("cases/" + id + "/#replay")}>看案例回放 · {data.title} →</a>)}
+        {note.data.sourcePath && <a href={sourceUrl(note.data.sourcePath)}>查看实现代码 ↗</a>}
+      </aside>
+    )}
+  </article>
+</SiteLayout>

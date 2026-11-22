@@ -4,8 +4,6 @@ on:
   pull_request:
     paths:
       - 'agent/**'
-      - 'sandbox/**'
-      - 'examples/pptx_validation.py'
       - '.github/workflows/pptx-validation.yml'
   workflow_dispatch:
 
@@ -41,10 +39,11 @@ jobs:
             sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
           fi
       - name: Generate and verify three PowerPoint decks
+        working-directory: agent
         if: steps.credential.outputs.ready == 'true'
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_PPT_TEST_KEY }}
-        run: uv run --project agent --locked --extra examples python examples/pptx_validation.py --output "$RUNNER_TEMP/pptx-validation"
+        run: uv run --project . --locked --extra examples python examples/pptx_validation.py --output "$RUNNER_TEMP/pptx-validation"
       - uses: actions/upload-artifact@v7
         if: steps.credential.outputs.ready == 'true'
         with:

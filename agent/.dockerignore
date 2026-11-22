@@ -1,0 +1,17 @@
+**
+!src/
+!src/agent_cook/
+!src/agent_cook/__init__.py
+!src/agent_cook/data/
+!src/agent_cook/data/native/
+!src/agent_cook/data/native/workspace-requirements.txt
+!src/agent_cook/sandbox/
+!src/agent_cook/sandbox/__init__.py
+!src/agent_cook/sandbox/dependencies.py
+!src/agent_cook/sandbox/limits.py
+!src/agent_cook/sandbox/paths.py
+!src/agent_cook/sandbox/urls.py
+!src/agent_cook/sandbox/worker/
+!src/agent_cook/sandbox/worker/*.py
+!sandbox/
+!sandbox/Dockerfile

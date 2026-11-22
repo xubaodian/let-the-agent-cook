@@ -60,7 +60,7 @@ flowchart TD
 | 数据与绘图 | pandas、NumPy、SciPy、PyArrow、Matplotlib |
 | 文本与配置 | charset-normalizer、PyYAML |
 
-已安装 LibreOffice 时，本地工作区可用 `soffice` 将 PPTX 转成 PDF，再用 pypdfium2 生成逐页图片。源码安装用 `./install --with-office` 或 `.\install.cmd --with-office` 加装。服务端镜像自带无界面的 Impress 和中日韩字体。 [依赖清单](../agent/src/agent_cook/data/native/workspace-requirements.txt) · [LibreOffice](https://www.libreoffice.org/download/)
+已安装 LibreOffice 时，本地工作区可用 `soffice` 将 PPTX 转成 PDF，再用 pypdfium2 生成逐页图片。源码安装用 `./install --with-office` 或 `.\install.cmd --with-office` 加装。服务端镜像自带无界面的 Impress 和中日韩字体。 [依赖清单](../src/agent_cook/data/native/workspace-requirements.txt) · [LibreOffice](https://www.libreoffice.org/download/)
 
 `install_dependencies` 接受包名和可选的精确版本。安装结果在当前任务中可复用，后端回收任务工作区时一并清除。本地由专用安装器访问公共包仓库，普通任务命令继续离线。Docker 和同源 E2B 模板需要更新镜像并启用 `--sandbox-network`，工具才可用。
 
@@ -101,7 +101,7 @@ Python 从 PyPI 安装 wheel，后续使用普通的 `python` 命令导入。Nod
 用 `--skill` 或任务 JSON 中的 `skills` 缩小本次挂载名单。已启用 Plugin 引用的 Skill 一并纳入。 [Plugin 和任务扩展](plugins.md)
 
 ```bash
-uv run --project agent agent-cook --skills-dir /path/to/skills \
+uv run --project . agent-cook --skills-dir /path/to/skills \
   '找到适合这个任务的 Skill，并说明它的步骤。'
 ```
 
@@ -125,7 +125,7 @@ uv run --project agent agent-cook --skills-dir /path/to/skills \
 比例和分辨率沿用所选模型的默认值，除非调用时显式指定。工具用实际图片格式确定扩展名，支持 PNG、JPEG 和 WebP，单张图片最多 16 MiB。可以用返回的 `path` 将图片放进网页，也可以用 `submit_results` 导出。
 
 ```bash
-uv run --project agent agent-cook \
+uv run --project . agent-cook \
   --model 'provider/chat-model' \
   --image-model bytedance-seed/seedream-4.5 \
   '生成一张 16:9 的深蓝色城市夜景，用 submit_results 交付图片。'
@@ -160,7 +160,7 @@ uv run --project agent agent-cook \
 ```bash
 export E2B_API_KEY='your-key'
 export AGENT_COOK_IMAGE='registry.example/agent-cook-sandbox:0.1'
-uv run --project agent --extra e2b python - <<'PY'
+uv run --project . --extra e2b python - <<'PY'
 import os
 from e2b import Template
 
@@ -168,7 +168,7 @@ Template.build(Template().from_image(os.environ["AGENT_COOK_IMAGE"]), alias="age
 PY
 
 export E2B_TEMPLATE='agent-cook'
-uv run --project agent --extra e2b --extra server agent-cook serve --sandbox e2b
+uv run --project . --extra e2b --extra server agent-cook serve --sandbox e2b
 ```
 
 远程后端同样在首次工具调用时创建，Run 退出时关闭。Agent Cook 在任务运行期间续期 E2B 租约，沙箱总存续时间仍受 E2B 套餐约束。E2B 公网入口采用访问令牌保护，两种后端默认关闭任务出网。模型和 E2B 的 API Key 由宿主进程使用。 [E2B 模板构建说明](https://e2b.dev/resources/introducing-build-system-2-0) · [E2B 套餐限制](https://e2b.dev/pricing)

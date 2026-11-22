@@ -2,7 +2,7 @@
 
 ## 从源码安装
 
-解压源码，在 macOS 或 Linux 运行 `./install`，在 Windows 双击 `install.cmd`。安装器优先使用兼容的 uv，必要时将固定版本装到源码自己的工具目录，再按 `agent/.python-version` 和 `agent/uv.lock` 安装 Agent Cook。安装完成会打开 CLI。以后用 `./cook` 或 `cook.cmd` 启动，重复运行安装可补齐依赖。[uv 安装器](https://docs.astral.sh/uv/reference/installer/)
+解压源码后进入 `agent/`。在 macOS 或 Linux 运行 `./install`，在 Windows 双击 `install.cmd`。安装器优先使用兼容的 uv，必要时将固定版本装到项目自己的工具目录，再按 `.python-version` 和 `uv.lock` 安装 Agent Cook。安装完成会打开 CLI。以后用 `./cook` 或 `cook.cmd` 启动，重复运行安装可补齐依赖。[uv 安装器](https://docs.astral.sh/uv/reference/installer/)
 
 源码安装同时准备工作区 Python 依赖、Node.js 和 npm，以及 Playwright Chromium，后续启动复用用户缓存。用 `./install --with-office` 或 `.\install.cmd --with-office` 加装 LibreOffice，以便把 PPT 转成真实预览。加装在 macOS 使用 Homebrew，在 Windows 使用 WinGet，在 Ubuntu 使用 APT。平台安装工具会按需提示权限。 [预装依赖与 PPT 预览](workspace-tools.md#办公与数据处理依赖)
 
@@ -77,7 +77,7 @@ sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 
 PR 的 [Actions](https://github.com/xubaodian/let-the-agent-cook/actions) 构建三端安装包，在对应的托管 runner 安装，验证入口及 Python、Node.js、Chromium。部署方可用仓库变量 `AGENT_COOK_MODELS_JSON` 以 [models.example.json](../models.example.json) 的格式向安装包提供公开候选模型。也可在本地打包时传 `--models models.json`。
 
-维护者发布时使用与 `agent/pyproject.toml` 匹配的版本标签，例如 `v0.1.0`。发布流水线安装锁定的依赖，签署 Windows MSI，签署并公证 macOS PKG，并构建供 HTTP 服务调用的 Linux amd64 和 arm64 工作区镜像。首次发布需要把 GHCR 中的 `agent-cook-sandbox` 包设为公开，供服务端拉取。流水线验证两个架构都可匿名读取后上传安装包。下载页源码位于 [docs/download/index.html](download/index.html)，可以随仓库的 `docs/` 部署。 [Windows 安装范围](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) · [Apple 公证](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) · [多架构镜像](https://docs.docker.com/build/building/multi-platform/)
+维护者发布时使用与 `agent/pyproject.toml` 匹配的版本标签，例如 `v0.1.0`。发布流水线安装锁定的依赖，签署 Windows MSI，签署并公证 macOS PKG，并构建供 HTTP 服务调用的 Linux amd64 和 arm64 工作区镜像。首次发布需要把 GHCR 中的 `agent-cook-sandbox` 包设为公开，供服务端拉取。流水线验证两个架构都可匿名读取后上传安装包。下载页源码位于 [docs/download/index.html](download/index.html)，可以从 `agent/docs/` 单独部署。 [Windows 安装范围](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) · [Apple 公证](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) · [多架构镜像](https://docs.docker.com/build/building/multi-platform/)
 
 Windows 签名使用 `WINDOWS_PFX_BASE64` 和 `WINDOWS_PFX_PASSWORD`。macOS 使用 `MACOS_APP_IDENTITY`、`MACOS_INSTALLER_IDENTITY` 及两个身份对应的 `MACOS_APP_P12_BASE64`、`MACOS_INSTALLER_P12_BASE64` 和各自的 `*_P12_PASSWORD`。公证使用 `MACOS_NOTARY_KEY_BASE64`、`MACOS_NOTARY_KEY_ID` 和 `MACOS_NOTARY_ISSUER`。
 
@@ -95,11 +95,11 @@ Windows 签名使用 `WINDOWS_PFX_BASE64` 和 `WINDOWS_PFX_PASSWORD`。macOS 使
 | macOS | `python3 installers/smoke.py "/Applications/Agent Cook.app/Contents/Resources/agent-cook/agent-cook" --files` |
 | Ubuntu | `python3 installers/smoke.py /usr/bin/agent-cook --files` |
 
-4. 从仓库运行下列回归。三端矩阵在真实系统隔离中执行 Node.js、Python 和 Chromium，校验宿主读写、网络和密钥限制，以及文件层级、覆盖提交、取消和结果目录。
+4. 从仓库的 Agent 目录运行下列回归。三端矩阵在真实系统隔离中执行 Node.js、Python 和 Chromium，校验宿主读写、网络和密钥限制，以及文件层级、覆盖提交、取消和结果目录。
 
 ```bash
-uv run --project agent --locked --all-extras python -m unittest discover -s agent/tests -v
-AGENT_COOK_TEST_NATIVE=1 uv run --project agent --locked --all-extras python -m unittest discover -s agent/tests -p test_native_sandbox.py -v
+uv run --project . --locked --all-extras python -m unittest discover -s tests -v
+AGENT_COOK_TEST_NATIVE=1 uv run --project . --locked --all-extras python -m unittest discover -s tests -p test_native_sandbox.py -v
 ```
 
 PowerShell 中先设置 `$env:AGENT_COOK_TEST_NATIVE = '1'`，再运行相同的 `uv run` 命令。
