@@ -22,7 +22,7 @@ from agent_cook.protocol.request import RunRequest
 from example_browser_fixture import ExampleWorker
 from test_openrouter import response, sdk_client
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 DATA_REVIEW = "Review the source rows and computed metrics."
 BROWSER_REVIEW = "Verify the current registration page and refresh its PNG."
 REPORT = ["out/report/metrics.json", "out/report/review.pptx"]
@@ -152,7 +152,8 @@ class ExamplePluginsTest(unittest.TestCase):
 
     def test_two_plugins_share_metrics_and_resume_after_compaction(self):
         self._require_office_tools()
-        files, events, _ = self._run_case("combined-review", self._combined(), browser=self._browser_executable())
+        browser = self._browser_executable()
+        files, events, _ = self._run_case("combined-review", self._combined(), browser=browser)
         self.assertEqual(set(files), set([*REPORT, *DASHBOARD_FILES]))
         self._check_report(files)
         self.assertEqual(files[REPORT[0]].read_bytes(), files["out/site/metrics.json"].read_bytes())
@@ -165,6 +166,15 @@ class ExamplePluginsTest(unittest.TestCase):
             and event["data"]["tool_call_id"] == "submit" and not event["data"]["is_error"]
         }
         self.assertEqual(checked, {"reporting-studio", "project-reporting-studio"})
+        if output := os.environ.get("AGENT_COOK_REPLAY_OUTPUT"):
+            self.assertIsNotNone(browser, "Set AGENT_COOK_TEST_BROWSER=1 to export a Chromium replay.")
+            destination = Path(output)
+            destination.mkdir(parents=True)
+            shutil.copyfile(self.root / "trace.jsonl", destination / "trace.jsonl")
+            for name, artifact in files.items():
+                path = destination / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(artifact, path)
 
     def _run_case(self, name, script, delegates=None, *, browser=None):
         if find_spec("mcp") is None:

@@ -1,0 +1,44 @@
+---
+import { repository, url } from "../lib/links"
+import "../styles/site.css"
+
+interface Props {
+  title?: string
+  description: string
+  current?: "notes" | "cases"
+}
+
+const { title, description, current } = Astro.props
+const name = "Baodian Xu"
+---
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#f7f7fb" />
+    <title>{title ? title + " · " + name : name}</title>
+    <link rel="icon" href={url("favicon.svg")} type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">跳到内容</a>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="identity" href={url()}><span class="monogram" aria-hidden="true">bx</span>{name}</a>
+        <nav aria-label="站点导航">
+          <a href={url("notes/")} aria-current={current === "notes" ? "page" : undefined}>想明白</a>
+          <a href={url("cases/")} aria-current={current === "cases" ? "page" : undefined}>做出来</a>
+          <a class="github-link" href={repository}>GitHub<span aria-hidden="true"> ↗</span></a>
+        </nav>
+      </div>
+    </header>
+    <main id="content">
+      <slot />
+    </main>
+    <footer class="site-footer container">
+      <a href={url()}>{name}</a>
+      <a href={repository}>查看仓库 <span aria-hidden="true">↗</span></a>
+    </footer>
+  </body>
+</html>

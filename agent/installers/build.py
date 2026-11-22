@@ -19,8 +19,8 @@ from pathlib import Path
 from uuid import UUID, uuid5
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "agent/src/agent_cook"
-VERSION = tomllib.loads((ROOT / "agent/pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+SOURCE = ROOT / "src/agent_cook"
+VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 WIX = "http://wixtoolset.org/schemas/v4/wxs"
 UPGRADE_CODE = UUID("5b2de3a8-b19c-4b62-ae5e-1ef6df4479ef")
 
@@ -51,7 +51,7 @@ def freeze(work: Path, image: str, models: Path | None, identity: str | None) ->
         raise SystemExit("Run the installer build with uv on PATH.")
     native = data / "native"
     shutil.copy2(uv, native / ("uv.exe" if os.name == "nt" else "uv"))
-    shutil.copyfile(ROOT / "agent/.python-version", native / ".python-version")
+    shutil.copyfile(ROOT / ".python-version", native / ".python-version")
     if models is not None:
         from agent_cook.model.catalog import ModelCatalog
 

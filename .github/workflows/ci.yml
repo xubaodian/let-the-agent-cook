@@ -2,8 +2,16 @@ name: Agent Cook CI
 
 on:
   pull_request:
+    paths:
+      - 'agent/**'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/installers.yml'
   push:
-    branches: [main]
+    branches: [main, 'verify/**']
+    paths:
+      - 'agent/**'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/installers.yml'
 
 permissions:
   contents: read
@@ -11,16 +19,19 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - name: Install development dependencies
-        run: uv sync --project agent --locked --all-extras
+        run: uv sync --project . --locked --all-extras
       - name: Test the CLI, service and runtime
-        run: uv run --project agent --locked --all-extras python -m unittest discover -s agent/tests -v
+        run: uv run --project . --locked --all-extras python -m unittest discover -s tests -v
       - name: Verify the installed CLI
         run: |
-          uv build --wheel --out-dir "${RUNNER_TEMP}/agent-wheel" agent
+          uv build --wheel --out-dir "${RUNNER_TEMP}/agent-wheel" .
           uv tool install --python 3.12 "${RUNNER_TEMP}"/agent-wheel/*.whl
           cd "${RUNNER_TEMP}"
           "$(uv tool dir --bin)/agent-cook" --list-models
@@ -32,6 +43,9 @@ jobs:
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: agent
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -42,18 +56,18 @@ jobs:
       - name: Exercise folder delivery with the Docker backend
         env:
           AGENT_COOK_TEST_DOCKER_IMAGE: agent-cook-sandbox:local
-        run: uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_docker_delivery.py -v
+        run: uv run --project . --no-sync python -m unittest discover -s tests -p test_docker_delivery.py -v
       - name: Install and import task-scoped Python and npm packages
         env:
           AGENT_COOK_TEST_DOCKER_IMAGE: agent-cook-sandbox:local
-        run: uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_dependency_tools.py -v
+        run: uv run --project . --no-sync python -m unittest discover -s tests -p test_dependency_tools.py -v
       - name: Exercise packaged runtimes, files and Chromium
         run: docker run --rm -i --network none --shm-size=128m agent-cook-sandbox:local python - < sandbox/smoke.py
       - name: Validate three PowerPoint deliveries in Docker
         env:
           AGENT_COOK_TEST_DOCKER_IMAGE: agent-cook-sandbox:local
           AGENT_COOK_TEST_PPT_OUTPUT: ${{ runner.temp }}/pptx-fixtures
-        run: uv run --project agent --locked --extra examples python -m unittest discover -s agent/tests -p test_pptx_responses.py -v
+        run: uv run --project . --locked --extra examples python -m unittest discover -s tests -p test_pptx_responses.py -v
       - uses: actions/upload-artifact@v7
         if: matrix.runner == 'ubuntu-24.04'
         with:
@@ -61,7 +75,7 @@ jobs:
           path: ${{ runner.temp }}/pptx-fixtures
           if-no-files-found: error
       - name: Build the service image
-        run: docker build -f agent/Dockerfile.server -t agent-cook-server:local agent
+        run: docker build -f Dockerfile.server -t agent-cook-server:local .
       - name: Verify the packaged service entry point
         run: docker run --rm agent-cook-server:local --help
 

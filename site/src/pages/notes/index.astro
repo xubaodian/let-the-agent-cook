@@ -1,0 +1,17 @@
+---
+import { getCollection } from "astro:content"
+import EntryList from "../../components/EntryList.astro"
+import SiteLayout from "../../layouts/SiteLayout.astro"
+import { newestFirst } from "../../lib/links"
+
+const notes = (await getCollection("notes")).sort(newestFirst)
+---
+<SiteLayout title="想明白" description="从 Agent Harness 出发，记录概念、运行机制和设计取舍。" current="notes">
+  <div class="container listing">
+    <header class="page-heading">
+      <h1>想明白</h1>
+      <p>从 Agent Harness 出发，记录概念、运行机制和设计取舍。</p>
+    </header>
+    <EntryList section="notes" entries={notes} />
+  </div>
+</SiteLayout>

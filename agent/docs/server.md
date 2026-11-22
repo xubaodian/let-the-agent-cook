@@ -31,10 +31,10 @@
 
 ## 容器部署
 
-在仓库根目录构建服务镜像。使用命名卷保留数据。可将配置文件提供给容器用户，并在镜像名之后添加 `--config /data/agent-cook.json`。也可以复制 `.env.example` 为 `.env`、填入配置，再用下面的 `--env-file` 启动。
+在仓库的 `agent/` 目录构建服务镜像。使用命名卷保留数据。可将配置文件提供给容器用户，并在镜像名之后添加 `--config /data/agent-cook.json`。也可以复制 `.env.example` 为 `.env`、填入配置，再用下面的 `--env-file` 启动。
 
 ```bash
-docker build -f agent/Dockerfile.server -t agent-cook-server:local agent
+docker build -f Dockerfile.server -t agent-cook-server:local .
 docker run --rm --env-file .env -p 127.0.0.1:8000:8000 \
   -v agent-cook-data:/data agent-cook-server:local --sandbox none
 ```

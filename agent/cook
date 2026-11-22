@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-project="$root/agent"
+project="$root"
 managed="$root/.agent-cook/tools"
 uv_version=$(< "$project/.uv-version")
 python="$project/.venv/bin/python"
@@ -12,7 +12,7 @@ find_uv() {
     local candidate version major minor patch
     local required_major required_minor required_patch
     IFS=. read -r required_major required_minor required_patch <<< "$uv_version"
-    for candidate in "$managed/uv" "$(command -v uv || true)"; do
+    for candidate in "$managed/uv" "$root/../.agent-cook/tools/uv" "$(command -v uv || true)"; do
         [[ -x "$candidate" ]] || continue
         version=$("$candidate" --version) || continue
         [[ "$version" =~ ^uv[[:space:]]+([0-9]+)\.([0-9]+)\.([0-9]+)([[:space:]]|$) ]] || continue
@@ -58,10 +58,14 @@ launch() {
         echo "Run ./install to set up Agent Cook." >&2
         exit 1
     fi
-    if [[ -f "$root/.env" ]]; then
+    local config="$root/.env"
+    if [[ ! -f "$config" ]]; then
+        config="$root/../.env"
+    fi
+    if [[ -f "$config" ]]; then
         local uv
         uv=$(find_uv) || { echo "Run ./install to restore uv for .env loading." >&2; exit 1; }
-        exec "$uv" run --project "$project" --no-sync --env-file "$root/.env" "$python" "$@"
+        exec "$uv" run --project "$project" --no-sync --env-file "$config" "$python" "$@"
     fi
     exec "$python" "$@"
 }

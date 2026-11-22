@@ -1,0 +1,30 @@
+{
+  "market": "ID",
+  "start_date": "2026-10-05",
+  "end_date": "2026-10-11",
+  "currency": "USD",
+  "orders": 6,
+  "valued_orders": 5,
+  "duplicate_rows": 1,
+  "gmv_cents": 55000,
+  "categories": [
+    {
+      "category": "fashion",
+      "label": "Mode",
+      "orders": 3,
+      "valued_orders": 2,
+      "gmv_cents": 19000,
+      "aov_cents": 9500,
+      "benchmark_cents": null
+    },
+    {
+      "category": "home-living",
+      "label": "Rumah dan Hunian",
+      "orders": 3,
+      "valued_orders": 3,
+      "gmv_cents": 36000,
+      "aov_cents": 12000,
+      "benchmark_cents": 10000
+    }
+  ]
+}
