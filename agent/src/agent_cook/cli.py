@@ -6,6 +6,7 @@ import sqlite3
 import sys
 from collections.abc import Callable
 from dataclasses import asdict, replace
+from datetime import date
 from functools import partial
 from importlib.util import find_spec
 from pathlib import Path
@@ -36,6 +37,7 @@ from agent_cook.sandbox.native.runtime import prepare_runtime
 from agent_cook.settings import DATA, AgentConfig, model_catalog, release_image, saved_model
 from agent_cook.state.local import LocalSession, LocalSessions
 from agent_cook.terminal import file_mentions, prompt_reader, show_progress
+from agent_cook.updates import manage_source_install, update_command
 
 
 def _select_model(
@@ -77,7 +79,7 @@ async def _run(
     observer: Callable[[RunEvent], None] | None = None,
     **options,
 ) -> RunResult:
-    trace_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with trace_path.open("x", encoding="utf-8") as trace:
         def record(event: RunEvent) -> None:
             write_jsonl(trace, event)
@@ -160,7 +162,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     name = "agent-cook" if mode == "local" else f"agent-cook {mode}"
     parser = argparse.ArgumentParser(
         prog=name, description="Run tasks with your OpenRouter model.",
-        epilog="Commands: exec, resume, doctor, setup-runtime, serve. Run without a task to start an interactive session.",
+        epilog="Commands: exec, resume, update, doctor, setup-runtime, serve. Run without a task to start an interactive session.",
     )
     parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
     if mode in ("local", "exec"):
@@ -238,6 +240,7 @@ def _paths(args: argparse.Namespace, directory: Path) -> None:
 
 def _configure(args: argparse.Namespace, directory: Path, mode: str) -> ModelCatalog:
     config = args.config = AgentConfig.load(args.config_path)
+    args.workspace = config.workspace()
     args.service = mode in ("serve", "docker")
     args.sandbox = args.sandbox or os.environ.get("AGENT_COOK_SANDBOX", "").strip() or config.sandbox.get("backend")
     if args.service:
@@ -282,12 +285,14 @@ def _set_sandbox(args: argparse.Namespace, selected: str | None) -> None:
     args.sandbox = None if selected == "none" else selected or (None if args.service else "native")
 
 
-def _execute(args, directory, prepared, task, api_key, inputs, *, observer=None, **extra):
+def _execute(args, prepared, task, api_key, inputs, *, local_session=None, observer=None, **extra):
     if inputs and prepared[1] is None:
         raise ValueError("Input files require the local workspace.")
     spec, factory, options = prepared
     run_id = uuid4().hex
-    trace = args.trace or directory / ".agent-cook" / "runs" / f"{run_id}.jsonl"
+    session_date = local_session.created_on if local_session else date.today().isoformat()
+    session_id = local_session.id if local_session else run_id
+    trace = args.trace or args.workspace / session_date / session_id / f"{run_id}.jsonl"
     result = asyncio.run(_run(
         spec, task, api_key, trace, run_id, factory, inputs,
         observer=observer, **options, **extra,
@@ -327,8 +332,8 @@ def _open_directory(path: Path) -> None:
             raise ValueError(f"Could not open '{path}'.")
 
 
-def _example(directory: Path) -> Path:
-    examples = directory / ".agent-cook" / "examples"
+def _example(workspace: Path) -> Path:
+    examples = workspace / "examples"
     examples.mkdir(parents=True, exist_ok=True)
     parent = Path(mkdtemp(prefix="sample-", dir=examples))
     source = DATA / "资料 样例"
@@ -341,7 +346,7 @@ def _show_key(config: AgentConfig, provider: str) -> None:
 
 
 def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalog, resume: bool) -> int:
-    store = LocalSessions(directory / ".agent-cook" / "sessions.sqlite3")
+    store = LocalSessions.for_directory(args.workspace, directory)
     saved = store.load(args.session_id) if resume else LocalSession()
     selected = args.sandbox or ("native" if saved.sandbox in ("docker", "e2b") else saved.sandbox)
     _set_sandbox(args, selected)
@@ -417,7 +422,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                         _failure(error)
                 else:
                     print(selected or "native")
-            elif command in ("/setup", "/key", "/model", "/config", "/example", "/open"):
+            elif command in ("/setup", "/key", "/model", "/config", "/example", "/open", "/update"):
                 try:
                     if command == "/setup":
                         setup()
@@ -444,13 +449,21 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                         if not args.config.path.is_file():
                             persist()
                         print(f"Configuration  {args.config.path}")
+                        print(f"Workspace  {args.workspace}")
                         print(f"Current model  {_chat_model(args, catalog) or 'not configured'}")
                         _show_key(args.config, "openrouter")
                         _show_key(args.config, "exa")
                     elif command == "/example":
-                        path = _example(directory)
+                        path = _example(args.workspace)
                         quoted = json.dumps(path.as_posix(), ensure_ascii=False)
                         print(f"Example: Summarize the sales table in @{quoted} and submit a short report.")
+                    elif command == "/update":
+                        if value not in ("", "--check", "--rollback"):
+                            raise ValueError("Usage: /update [--check|--rollback]")
+                        manage_source_install(
+                            check=value == "--check", rollback=value == "--rollback",
+                            config=args.config_path, models=args.models_config,
+                        )
                     elif saved.result_dir is None:
                         print("This session has no results directory yet.")
                     else:
@@ -463,7 +476,7 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
                 print(
                     "Use @path or @\"path with spaces\" for a file or folder. "
                     "Commands: /setup, /key [openrouter|exa], /model [id], /config, "
-                    "/example, /open, /files, /sandbox [native|none], /new, /exit."
+                    "/example, /open, /files, /sandbox [native|none], /update [--check|--rollback], /new, /exit."
                 )
             else:
                 print(f"Unknown command {command}. Use /help.", file=sys.stderr)
@@ -485,8 +498,8 @@ def _interactive(args: argparse.Namespace, directory: Path, catalog: ModelCatalo
             spec, _, options = prepared
             history = saved.continue_history(spec.model)
             result, trace, delivered = _execute(
-                args, directory, prepared, request.task, _api_key(args.config), staged,
-                observer=show_progress, session=history,
+                args, prepared, request.task, _api_key(args.config), staged,
+                local_session=saved, observer=show_progress, session=history,
             )
             snapshots = saved.results
             if delivered is not None:
@@ -569,6 +582,8 @@ def main(argv: list[str] | None = None) -> int:
             if not stream.isatty() and (configure := getattr(stream, "reconfigure", None)):
                 configure(encoding="utf-8")
     words = list(sys.argv[1:] if argv is None else argv)
+    if words and words[0] in ("update", "install-global"):
+        return update_command(words[0], words[1:])
     if sys.platform == "win32" and words[:1] == ["__chromium_appcontainer"]:
         from agent_cook.sandbox.native.windows import chromium_process
 
@@ -645,7 +660,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         observer = partial(write_jsonl, sys.stdout) if args.json else None
-        _execute(args, directory, prepared, request.task, api_key, inputs, observer=observer)
+        _execute(args, prepared, request.task, api_key, inputs, observer=observer)
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("Run cancelled.", file=sys.stderr)
         return 130

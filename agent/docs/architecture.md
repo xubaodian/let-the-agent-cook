@@ -47,3 +47,5 @@ Skill 默认注入名称、描述和入口，由模型按需读取正文。Plugi
 CLI 用 SQLite 保存会话历史、checkpoint、输入副本及交付快照。压缩改变后续请求携带的上下文，原消息仍可随会话保存。运行期间的事件记录模型和工具进度、checkpoint、产物引用及 UI 附件。CLI 写入 JSONL，HTTP 服务将事件持久化后通过 SSE 提供查阅和续接。 [会话存储](../src/agent_cook/state/local.py) · [事件协议](../src/agent_cook/protocol/events.py) · [UI 附件](../src/agent_cook/protocol/ui.py) · [HTTP 事件接口](server.md#api)
 
 `submit_results` 导出被选中的文件。同一路径以最近一次成功提交为准，结束前校验工作区内的文件内容是否与提交版本一致。CLI 在任务成功后把最终文件按相对路径归集到 `<run_id>-results/`，并可通过 `/open` 打开。 [提交与校验](../src/agent_cook/tools/artifacts.py) · [交付目录](../src/agent_cook/delivery.py)
+
+本地 CLI 将启动目录用于解析用户输入，公共工作区用于持久化会话与交付。会话存储按启动目录区分，结果目录按会话创建日期和 ID 组织。全局源码安装使用独立版本目录，入口在新版本通过启动检查后切换。运行中的 CLI 会持有对应版本的共享锁。 [输入路径与结果归档](install.md#输入路径与结果归档) · [更新实现](../src/agent_cook/updates.py) · [版本入口](../src/agent_cook/managed_launch.py)

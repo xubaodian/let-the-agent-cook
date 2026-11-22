@@ -16,7 +16,11 @@ def smoke(executable: Path, *, files: bool = False) -> None:
             "models": {"chat": {"available": ["installed/test"], "default": "installed/test"}},
         }), encoding="utf-8")
         command = [str(executable), "-C", directory, "--config", str(config)]
-        environment = {**os.environ, "OPENROUTER_API_KEY": "", "EXA_API_KEY": "", "OPENROUTER_MODEL": ""}
+        workspace = Path(directory) / "workspace"
+        environment = {
+            **os.environ, "OPENROUTER_API_KEY": "", "EXA_API_KEY": "", "OPENROUTER_MODEL": "",
+            "AGENT_COOK_WORKSPACE": str(workspace),
+        }
         help_text = subprocess.check_output([*command, "--help"], cwd=directory, encoding="utf-8")
         if "--input" not in help_text:
             raise ValueError("The installed CLI could not show its help.")
@@ -34,7 +38,7 @@ def smoke(executable: Path, *, files: bool = False) -> None:
             raise ValueError("The installed CLI could not use the shared configuration.")
         if "installed-key-fixture" in result.stdout or "installed-exa-fixture" in result.stdout:
             raise ValueError("The installed CLI displayed a key.")
-        sales = list(Path(directory).glob(".agent-cook/examples/*/资料 样例/表格/销售 数据.csv"))
+        sales = list(workspace.glob("examples/*/资料 样例/表格/销售 数据.csv"))
         if len(sales) != 1 or "Notebook" not in sales[0].read_text(encoding="utf-8"):
             raise ValueError(f"The installed CLI could not unpack the sample. {result.stderr}")
         doctor = subprocess.run(
@@ -44,10 +48,10 @@ def smoke(executable: Path, *, files: bool = False) -> None:
         if doctor.returncode or "OK  Native process isolation" not in doctor.stdout:
             raise ValueError(f"The installed CLI could not run in native isolation.\n{doctor.stdout}{doctor.stderr}")
         if files:
-            verify_delivery(executable, Path(directory), sales[0])
+            verify_delivery(executable, Path(directory), sales[0], workspace)
 
 
-def verify_delivery(executable: Path, directory: Path, sales: Path) -> None:
+def verify_delivery(executable: Path, directory: Path, sales: Path, workspace: Path) -> None:
     selected = sales.parents[1]
     relative = sales.relative_to(selected.parent)
     original = sales.read_bytes()
@@ -57,11 +61,11 @@ def verify_delivery(executable: Path, directory: Path, sales: Path) -> None:
         "Replace the copy's contents with exactly 'Agent Cook acceptance OK' on one line. "
         "Use submit_results to deliver that file at its original workspace path."
     )
-    environment = dict(os.environ)
+    environment = {**os.environ, "AGENT_COOK_WORKSPACE": str(workspace)}
     environment.pop("AGENT_COOK_SANDBOX", None)
     result = subprocess.run(command, cwd=directory, env=environment, encoding="utf-8", timeout=600)
     result.check_returncode()
-    delivered, = directory.glob(".agent-cook/runs/*-results")
+    delivered, = workspace.glob("*/*/*-results")
     if sales.read_bytes() != original:
         raise ValueError("The selected input was modified.")
     if (delivered / relative).read_text(encoding="utf-8").strip() != "Agent Cook acceptance OK":
