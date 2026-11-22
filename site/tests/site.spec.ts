@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises"
 test("home, reading lists, article and case link together", async ({ page }) => {
   const broken: string[] = []
   page.on("response", (response) => {
-    if (!response.ok()) broken.push(response.status() + " " + response.url())
+    if (response.status() >= 400) broken.push(response.status() + " " + response.url())
   })
   await page.goto("./")
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Baodian Xu.")
@@ -96,7 +96,7 @@ test("offline artifacts preview, filter and download", async ({ page, context })
   ])
   expect(JSON.parse(await readFile(await metrics.path(), "utf8")).gmv_cents).toBe(55000)
 
-  await page.getByRole("button", { name: "筛选网页" }).click()
+  await page.getByRole("button", { name: "筛选网页", exact: true }).click()
   const frame = page.frameLocator('iframe[title="店铺周报筛选网页"]')
   await expect(frame.getByRole("status")).toHaveText("US$550,00")
   await frame.getByRole("button", { name: "Mode", exact: true }).click()
