@@ -12,14 +12,32 @@ npm ci
 npm run dev
 ~~~
 
-打开终端显示的地址。测试生产构建时，先执行下面的命令。
+打开终端显示的地址。修改 Markdown 后刷新即可预览。
+
+## 新增一篇文章或案例
+
+在 **site/** 运行一个命令，按提示填写内容类型、文件名、标题、简介和主题。案例再提供相对于仓库根目录的源码路径。
 
 ~~~bash
-npm run check
-npm run build
-npx playwright install chromium
-npm test
+npm run new
 ~~~
+
+脚本会填写日期和 frontmatter，并打印生成的文件。支持用参数录入已有资料。以下示例从 **site/** 目录运行。
+
+~~~bash
+npm run new -- note tool-call-basics
+npm run new -- case shop-review-notes --source-path agent/examples/combined-review/run.json
+~~~
+
+类型、标题、简介和主题也可以用参数一次传齐。用 **--body** 导入已有的 Markdown 正文。
+
+~~~bash
+npm run new -- note tool-call-draft \
+  --title "一次工具调用如何完成" --description "从工具意图到结果回写" \
+  --topic "Agent Harness" --body /path/to/draft.md
+~~~
+
+写完后提交 PR。Actions 会校验内容字段和源码链接、运行测试并保留构建产物。合并后发布到站点。
 
 ## 写内容
 
@@ -50,6 +68,21 @@ uv run --no-sync python ../site/scripts/export-weekly-review.py "$capture"
 
 导出脚本根据事件生成公开步骤，保留实际生成的 PPTX 和通过验证的网页。网页数据内嵌到离线副本，PPTX 由 LibreOffice 渲染成站内预览。原始轨迹留在临时目录。
 
-## 构建与发布
+## 使用 GitHub Pages 发布
 
-Personal site 工作流用 GitHub Pages 项目路径构建和测试，并保留 **personal-site-preview** 构建产物。要在现有仓库发布，先在仓库的 Settings → Pages 选择 GitHub Actions，再在主分支手动运行工作流并选中 **deploy**。源码链接固定到本次构建的提交。
+1. 在 [仓库 Pages 设置](https://github.com/xubaodian/let-the-agent-cook/settings/pages) 的 **Build and deployment → Source** 选择 **GitHub Actions**。
+2. 合并含站点改动的 PR。**Personal site** 工作流会构建和测试，再把通过检查的站点发布到 Pages。若先合并再启用 Pages，在 **Actions → Personal site → Run workflow** 选择 **main** 即可完成首次发布。
+3. 发布成功后，从工作流的 **github-pages** 环境打开站点。默认发布地址为 [xubaodian.github.io/let-the-agent-cook/](https://xubaodian.github.io/let-the-agent-cook/)。
+
+PR 检查也会生成 **personal-site-preview**，便于下载产物。站点中的源码链接指向本次构建对应的提交。
+
+需要在本地验证生产构建时，可以从 **site/** 运行以下命令。
+
+~~~bash
+npm ci
+npm run test:content
+npm run check
+npm run build
+npx playwright install chromium
+npm test
+~~~
