@@ -135,7 +135,6 @@ class NativeDeliveryTest(unittest.TestCase):
 
 @unittest.skipUnless(_RUN_NATIVE, "Set AGENT_COOK_TEST_NATIVE=1 on a host with native isolation.")
 class NativeBoundaryTest(unittest.IsolatedAsyncioTestCase):
-    @unittest.skipUnless(os.environ.get("AGENT_COOK_TEST_OFFICE") == "1", "Needs a native LibreOffice installation.")
     async def test_renders_pptx_in_the_workspace(self):
         from pptx import Presentation
 
@@ -155,10 +154,20 @@ class NativeBoundaryTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue((await sandbox.get_file("汇报 样例.pdf")).startswith(b"%PDF"))
             verify = await sandbox.exec([
                 "python", "-c",
-                "from pypdf import PdfReader; import sys; assert len(PdfReader(sys.argv[1]).pages) == 2",
+                dedent("""
+                    import sys
+                    import pypdfium2
+
+                    with pypdfium2.PdfDocument(sys.argv[1]) as document:
+                        assert len(document) == 2
+                        for index, page in enumerate(document, 1):
+                            page.render().to_pil().save(f"slide-{index}.png")
+                """),
                 "汇报 样例.pdf",
             ], cwd=".", timeout_seconds=20)
             self.assertEqual(verify.exit_code, 0, verify.stderr)
+            for index in (1, 2):
+                self.assertTrue((await sandbox.get_file(f"slide-{index}.png")).startswith(b"\x89PNG\r\n\x1a\n"))
 
     async def test_os_blocks_host_files_credentials_and_loopback(self):
         probe = dedent("""

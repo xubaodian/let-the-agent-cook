@@ -4,7 +4,7 @@
 
 解压源码后进入 `agent/`。在 macOS 或 Linux 运行 `./install`，在 Windows 双击 `install.cmd`。安装器优先使用兼容的 uv，必要时将固定版本装到项目自己的工具目录，再按 `.python-version` 和 `uv.lock` 安装 Agent Cook。安装完成会打开 CLI。以后用 `./cook` 或 `cook.cmd` 启动，重复运行安装可补齐依赖。[uv 安装器](https://docs.astral.sh/uv/reference/installer/)
 
-源码安装同时准备工作区 Python 依赖、Node.js 和 npm，以及 Playwright Chromium，后续启动复用用户缓存。用 `./install --with-office` 或 `.\install.cmd --with-office` 加装 LibreOffice，以便把 PPT 转成真实预览。加装在 macOS 使用 Homebrew，在 Windows 使用 WinGet，在 Ubuntu 使用 APT。平台安装工具会按需提示权限。 [预装依赖与 PPT 预览](workspace-tools.md#办公与数据处理依赖)
+安装会准备工作区 Python 依赖、Node.js、npm、Playwright Chromium 和 LibreOffice。这些组件均通过准备后，安装才完成。LibreOffice 用于把 PPT 渲染成真实预览，已安装时自动复用。安装器在 macOS 使用 Homebrew，在 Windows 使用 WinGet，在 Ubuntu 使用 APT。系统软件包管理器不可用时，可以从官网下载 LibreOffice 并重新运行安装。 [预装依赖与 PPT 预览](workspace-tools.md#办公与数据处理依赖) · [LibreOffice 安装说明](https://www.libreoffice.org/installation-instructions/)
 
 源码路径可以包含空格和中文。从其他目录调用时，给脚本路径加引号，例如 `bash "$HOME/Downloads/Agent Cook/agent/install"`。ZIP 解压后若执行权限丢失，可在 `agent/` 下用 `bash ./install` 安装、用 `bash ./cook` 启动。移动源码目录后，在新位置重新运行安装即可重建虚拟环境。
 
@@ -34,7 +34,7 @@
 
 从 [Agent Cook Releases](https://github.com/xubaodian/let-the-agent-cook/releases/latest) 下载对应的安装包。CLI 和 Python 随安装包提供，打开后使用与源码安装相同的向导。
 
-原生安装包在首次用到时准备工作区运行时。也可在终端用安装目录中的 CLI 执行 `setup-runtime`，需要安装 LibreOffice 时加 `--with-office`。已装的 LibreOffice 自动识别。
+首次从应用菜单打开原生安装版时会准备工作区运行时。也可在终端用安装目录中的 CLI 执行 `setup-runtime`，补齐包括 LibreOffice 在内的组件。Ubuntu 安装包由 APT 安装 LibreOffice Impress 和中日韩字体。
 
 | 系统 | 安装包 | 安装后打开 |
 | --- | --- | --- |
@@ -46,7 +46,7 @@
 
 1. 打开 Agent Cook。按 Enter 在浏览器授权 OpenRouter，或输入 `key` 无回显粘贴已有 Key。可录入 Exa Key 或按 Enter 跳过，然后选择对话模型或输入模型 ID。
 2. 输入 `/example` 生成样例目录。把终端给出的任务粘贴回 CLI。处理自己的文件时，可用 `@路径` 或 `@"带空格的目录"` 选择文件夹。多个输入可以一起选择。
-3. 本地脚本通过系统沙箱执行。Linux 源码用户需安装 Bubblewrap，例如在 Ubuntu 运行 `sudo apt install bubblewrap`。用 `agent-cook doctor --runtime` 可验证 Python、Node.js、npm 和 Chromium。
+3. 本地脚本通过系统沙箱执行。Linux 源码用户需安装 Bubblewrap，例如在 Ubuntu 运行 `sudo apt install bubblewrap`。用 `agent-cook doctor --runtime` 可验证 Python、Node.js、npm、Chromium 和 LibreOffice。
 4. 成功后，终端会显示结果目录的绝对路径。输入 `/open` 可在文件管理器打开。
 
 附加目录时保留目录名和文件层级，原件保留在宿主机。每个文件最多 16 MiB，一批输入最多 32 MiB。导入跳过目录内的符号链接与 Windows 联接。路径冲突会提示具体文件或文件夹。成功后 `<run_id>-results/` 包含通过最终校验的产物。提交批次与记录在同一层，供回放与续接使用。

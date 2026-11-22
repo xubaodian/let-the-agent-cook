@@ -49,10 +49,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-      - name: Install and launch the source CLI
-        run: ./install --list-models
       - name: Prepare the Docker workspace for the service
-        run: ./cook docker
+        run: ./cook setup --docker
       - name: Exercise folder delivery with the Docker backend
         env:
           AGENT_COOK_TEST_DOCKER_IMAGE: agent-cook-sandbox:local

@@ -31,6 +31,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: 'Agent Cook 源码'
+      - name: Prepare LibreOffice on Windows Server runners without WinGet
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (!(Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+            choco install libreoffice-fresh -y --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Install and restart the source CLI on Windows
         if: runner.os == 'Windows' && !inputs.signed
         shell: cmd
@@ -67,7 +75,7 @@ jobs:
           uv run --project . --no-sync python -m unittest discover -s tests -p test_local_files.py -v
           uv run --project . --no-sync python -m unittest discover -s tests -p test_onboarding.py -v
           uv run --project . --no-sync python -m unittest discover -s tests -p test_updates.py -v
-      - name: Verify native isolation and CLI folder delivery
+      - name: Verify native isolation, folder delivery and PPT rendering
         env:
           AGENT_COOK_TEST_NATIVE: '1'
           PYTHONUTF8: '1'
@@ -82,14 +90,6 @@ jobs:
           for report in "$HOME"/Library/Logs/DiagnosticReports/{sandbox-exec,true,python,node,chrome-headless-shell}-*.ips; do
             if [[ -f "$report" ]]; then sed -n '1,55p' "$report"; fi
           done
-      - name: Render a PowerPoint in the native Ubuntu sandbox
-        if: runner.os == 'Linux'
-        env:
-          AGENT_COOK_TEST_NATIVE: '1'
-          AGENT_COOK_TEST_OFFICE: '1'
-        run: |
-          ./cook setup-runtime --with-office
-          uv run --project . --no-sync python -m unittest discover -s tests -p test_native_sandbox.py -k renders_pptx -v
       - name: Install WiX
         if: runner.os == 'Windows'
         shell: pwsh

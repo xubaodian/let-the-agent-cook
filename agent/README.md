@@ -11,7 +11,7 @@ Agent Cook 是一个接入 OpenRouter 的终端助手。你可以用它对话、
 | macOS / Linux | `./install` | `./cook` |
 | Windows | 双击 `install.cmd` | 双击 `cook.cmd`，或运行 `.\cook.cmd` |
 
-安装脚本会准备 Python、Node.js、npm 和 Chromium，以及处理 Excel、Word、PPT、PDF、图片和表格数据的常用库，完成后打开 CLI。Ubuntu 源码安装需要 Bubblewrap（`sudo apt install bubblewrap`）。需要用实际排版引擎预览 PPT 时，可加 `--with-office` 安装 LibreOffice。 [安装指南](docs/install.md) · [GitHub Releases](https://github.com/xubaodian/let-the-agent-cook/releases)
+安装脚本会准备 Python、Node.js、npm、Chromium 和 LibreOffice，以及处理 Excel、Word、PPT、PDF、图片和表格数据的常用库。LibreOffice 用于渲染 PPT 预览。Ubuntu 源码安装需要 Bubblewrap（`sudo apt install bubblewrap`）。 [安装指南](docs/install.md) · [GitHub Releases](https://github.com/xubaodian/let-the-agent-cook/releases)
 
 需要从任意终端目录运行 `agent-cook` 时，用 `./install --global`（macOS / Linux）或 `.\install.cmd --global`（Windows）安装到当前用户，再打开一个新终端。全局源码版在 CLI 中输入 `/update` 即可更新，下次启动生效。 [安装与更新](docs/install.md#全局安装与更新)
 

@@ -31,7 +31,7 @@ def smoke(executable: Path, *, files: bool = False) -> None:
         if {entry["name"] for entry in json.loads(plugins)} != {"reporting-studio", "project-reporting-studio"}:
             raise ValueError("The installed CLI could not load its bundled studios.")
         result = subprocess.run(
-            command, input="/config\n/example\n/exit\n", capture_output=True, cwd=directory, env=environment,
+            [*command, "--app"], input="/config\n/example\n/exit\n", capture_output=True, cwd=directory, env=environment,
             encoding="utf-8", check=True, timeout=30,
         )
         if "Current model  installed/test" not in result.stdout or result.stdout.count("configured via agent-cook.json") != 2:

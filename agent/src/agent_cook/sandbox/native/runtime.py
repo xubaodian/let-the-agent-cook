@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory, TemporaryFile
 from urllib.request import urlopen
 
 from agent_cook.sandbox.interface import SandboxError
+from agent_cook.sandbox.native.office import prepare_office
 from agent_cook.settings import DATA
 
 _NODE_VERSION = "24.22.3"
@@ -224,3 +225,4 @@ async def prepare_runtime() -> None:
     python, _ = await python_runtime()
     await asyncio.to_thread(node_runtime)
     await chromium_runtime(python)
+    await asyncio.to_thread(prepare_office)

@@ -73,7 +73,7 @@ class NativeSandbox:
         if binary in ("soffice", "libreoffice", "soffice.com", "soffice.exe"):
             office = office_executable()
             if office is None:
-                raise SandboxError("LibreOffice is unavailable. Run agent-cook setup-runtime --with-office to prepare it.")
+                raise SandboxError("LibreOffice is unavailable. Run agent-cook setup-runtime to prepare it.")
             if sys.platform == "win32":
                 program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files")).resolve()
                 if office.is_relative_to(program_files):
@@ -226,6 +226,7 @@ class NativeSandbox:
                     "scipy, xlrd, xlsxwriter, yaml",
                 ),
                 ("node", str(npm_cli(node)), "--version"),
+                ("soffice", "--headless", "--version"),
             )
         else:
             commands = (("cmd", "/d", "/c", "exit", "0"),) if sys.platform == "win32" else (("true",),)
