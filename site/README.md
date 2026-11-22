@@ -32,7 +32,7 @@ npm test
 
 每篇文章或案例用 Markdown frontmatter 填写标题、简介、时间和主题。案例可以用 **sourcePath** 指向同仓库的文件或目录。目录路径以斜杠结尾。**setupPath** 和 **command** 提供运行说明，**relatedNote** 用文章的文件名关联原理文章，**replay** 用回放的文件名关联步骤和产物。
 
-例如，vLLM 实验的代码可以在 [projects/](../projects/) 下新增 **vllm-serving/**。一篇 Serving & Inference 原理笔记放进文章目录，一篇实验记录放进案例目录并链接那个项目。
+例如，开始做 vLLM 服务实验后，在仓库根目录添加 **vllm-serving/**，与 **agent/** 和 **site/** 同级。原理笔记放进文章目录，实验记录放进案例目录，案例的 **sourcePath** 指向该项目。
 
 ## 刷新周报回放
 
