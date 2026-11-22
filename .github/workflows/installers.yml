@@ -86,8 +86,10 @@ jobs:
         if: failure() && runner.os == 'macOS'
         run: |
           /usr/bin/sandbox-exec -p '(version 1) (allow default)' /usr/bin/true || true
-          sudo log show --last 4m --style compact --predicate 'eventMessage CONTAINS "Sandbox: chrome-headless-shell"' | tail -n 80
-          for report in "$HOME"/Library/Logs/DiagnosticReports/{sandbox-exec,true,python,node,chrome-headless-shell}-*.ips; do
+          sudo log show --last 4m --style compact \
+            --predicate 'eventMessage CONTAINS "Sandbox: chrome-headless-shell" OR eventMessage CONTAINS[c] "Sandbox: soffice"' \
+            | tail -n 100
+          for report in "$HOME"/Library/Logs/DiagnosticReports/{sandbox-exec,true,python,node,chrome-headless-shell,soffice,LibreOffice}*.ips; do
             if [[ -f "$report" ]]; then sed -n '1,55p' "$report"; fi
           done
       - name: Install WiX

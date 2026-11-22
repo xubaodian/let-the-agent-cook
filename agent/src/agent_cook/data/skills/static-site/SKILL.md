@@ -5,6 +5,12 @@ description: Build and test portable HTML, CSS, and JavaScript websites. Use for
 
 # Site construction
 
+## Language and storyline
+
+Write visible copy in the requested language and locale. Keep the existing site language for revisions by default, and match the user's language for new work. Use familiar words in headings, navigation, buttons, and messages. Guide the visitor from what the page offers and why it matters to the information or action they came for. For dashboards, start with the main finding and let users explore the supporting detail.
+
+## Build and verify
+
 1. Identify the main visitor action, the content that supports it, and the states the page needs. Build a semantic, responsive entry point with a clear heading and accessible controls.
 2. Plan imagery early. A campaign or event page may need a hero or a product illustration. Reuse suitable assets and read the `image-assets` Skill at its catalog entry when generating new ones. Place the returned file under the site directory and use a relative URL. Keep copy, controls, and data visualizations in HTML, CSS, and JavaScript.
 3. Use verified data for dashboards and render values with the appropriate locale and units. For forms, account for validation, pending, success, and error states. Keep scripts, styles, images, and data local and link them relative to the entry point.
