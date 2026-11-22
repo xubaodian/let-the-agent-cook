@@ -9,6 +9,8 @@
 | [活动报名站](event-registration/run.json) | `reporting-studio` 通过 Streamable HTTP 连接 `reference-library/search` | 页面、活动内容、模拟接口和截图。验证空表单、满员与成功状态，以及改版后的重新截图。 |
 | [双插件复盘](combined-review/run.json) | 两个 Plugin，选择 `fixture-data/query_rows` 与 `reference-library/search` | PPTX 和可筛选站点。对齐两份指标 JSON、验证筛选结果、复用 checkpoint 前的文件，并一起提交。 |
 
+站点的 [双插件周报案例](../../site/src/content/cases/weekly-review.md) 有执行回放、筛选页和 PPTX。可按 [站点启动说明](../../site/README.md) 打开交互页面。
+
 ## 运行
 
 在仓库的 `agent/` 目录配置 OpenRouter 后，用 `./cook demo` 在本地原生沙箱运行样例。[安装与启动](../README.md#安装与启动)

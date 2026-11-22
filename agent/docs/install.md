@@ -77,7 +77,7 @@ sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 
 PR 的 [Actions](https://github.com/xubaodian/let-the-agent-cook/actions) 构建三端安装包，在对应的托管 runner 安装，验证入口及 Python、Node.js、Chromium。部署方可用仓库变量 `AGENT_COOK_MODELS_JSON` 以 [models.example.json](../models.example.json) 的格式向安装包提供公开候选模型。也可在本地打包时传 `--models models.json`。
 
-维护者发布时使用与 `agent/pyproject.toml` 匹配的版本标签，例如 `v0.1.0`。发布流水线安装锁定的依赖，签署 Windows MSI，签署并公证 macOS PKG，并构建供 HTTP 服务调用的 Linux amd64 和 arm64 工作区镜像。首次发布需要把 GHCR 中的 `agent-cook-sandbox` 包设为公开，供服务端拉取。流水线验证两个架构都可匿名读取后上传安装包。下载页源码位于 [docs/download/index.html](download/index.html)，可以随仓库的 `docs/` 部署。 [Windows 安装范围](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) · [Apple 公证](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) · [多架构镜像](https://docs.docker.com/build/building/multi-platform/)
+维护者发布时使用与 `agent/pyproject.toml` 匹配的版本标签，例如 `v0.1.0`。发布流水线安装锁定的依赖，签署 Windows MSI，签署并公证 macOS PKG，并构建供 HTTP 服务调用的 Linux amd64 和 arm64 工作区镜像。首次发布需要把 GHCR 中的 `agent-cook-sandbox` 包设为公开，供服务端拉取。流水线验证两个架构都可匿名读取后上传安装包。下载页源码位于 [docs/download/index.html](download/index.html)，可以从 `agent/docs/` 单独部署。 [Windows 安装范围](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) · [Apple 公证](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) · [多架构镜像](https://docs.docker.com/build/building/multi-platform/)
 
 Windows 签名使用 `WINDOWS_PFX_BASE64` 和 `WINDOWS_PFX_PASSWORD`。macOS 使用 `MACOS_APP_IDENTITY`、`MACOS_INSTALLER_IDENTITY` 及两个身份对应的 `MACOS_APP_P12_BASE64`、`MACOS_INSTALLER_P12_BASE64` 和各自的 `*_P12_PASSWORD`。公证使用 `MACOS_NOTARY_KEY_BASE64`、`MACOS_NOTARY_KEY_ID` 和 `MACOS_NOTARY_ISSUER`。
 
@@ -95,7 +95,7 @@ Windows 签名使用 `WINDOWS_PFX_BASE64` 和 `WINDOWS_PFX_PASSWORD`。macOS 使
 | macOS | `python3 installers/smoke.py "/Applications/Agent Cook.app/Contents/Resources/agent-cook/agent-cook" --files` |
 | Ubuntu | `python3 installers/smoke.py /usr/bin/agent-cook --files` |
 
-4. 从仓库运行下列回归。三端矩阵在真实系统隔离中执行 Node.js、Python 和 Chromium，校验宿主读写、网络和密钥限制，以及文件层级、覆盖提交、取消和结果目录。
+4. 从仓库的 Agent 目录运行下列回归。三端矩阵在真实系统隔离中执行 Node.js、Python 和 Chromium，校验宿主读写、网络和密钥限制，以及文件层级、覆盖提交、取消和结果目录。
 
 ```bash
 uv run --project . --locked --all-extras python -m unittest discover -s tests -v

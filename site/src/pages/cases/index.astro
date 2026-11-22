@@ -1,0 +1,17 @@
+---
+import { getCollection } from "astro:content"
+import EntryList from "../../components/EntryList.astro"
+import SiteLayout from "../../layouts/SiteLayout.astro"
+import { newestFirst } from "../../lib/links"
+
+const cases = (await getCollection("cases")).sort(newestFirst)
+---
+<SiteLayout title="做出来" description="顺着输入、执行记录和产物，看看项目怎么做出来。" current="cases">
+  <div class="container listing">
+    <header class="page-heading">
+      <h1>做出来</h1>
+      <p>顺着输入、执行记录和产物，看看项目怎么做出来。</p>
+    </header>
+    <EntryList section="cases" entries={cases} />
+  </div>
+</SiteLayout>

@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "id": "setup",
+      "seq": 2,
+      "title": "载入任务",
+      "detail": "启用两个 Studio，挂载任务所需的技能和两个 MCP 工具。",
+      "events": [
+        "extensions.loaded",
+        "run.started"
+      ]
+    },
+    {
+      "id": "read",
+      "seq": 16,
+      "title": "读取订单与口径",
+      "detail": "读数据分析 Skill，分页获取合成订单和类目基准，并查询印尼语 GMV 口径。",
+      "events": [
+        "read_file",
+        "fixture-data/query_rows",
+        "reference-library/search"
+      ]
+    },
+    {
+      "id": "build",
+      "seq": 24,
+      "title": "计算指标并生成 PPTX",
+      "detail": "脚本保存输入，去重后留下 6 个订单。其中 5 个含金额，GMV 合计 US$550,00。脚本用同一份指标生成可编辑周报。",
+      "events": [
+        "write_file",
+        "run_command"
+      ]
+    },
+    {
+      "id": "dashboard",
+      "seq": 32,
+      "title": "组装筛选网页",
+      "detail": "把报告的指标 JSON 复制到网页目录，和筛选界面、资料引用一起保存。",
+      "events": [
+        "copy_file",
+        "write_file"
+      ]
+    },
+    {
+      "id": "checkpoint",
+      "seq": 34,
+      "title": "压缩并接续",
+      "detail": "运行时压缩早先的上下文，检查点保留工作区文件路径和剩余的浏览器验收步骤。",
+      "events": [
+        "context.compacted"
+      ]
+    },
+    {
+      "id": "verify",
+      "seq": 40,
+      "title": "检查浏览器筛选",
+      "detail": "Chromium 检查页面总额 US$550,00，再点击 Mode，验证金额切换到 US$190,00。",
+      "events": [
+        "playwright",
+        "hook.finished"
+      ]
+    },
+    {
+      "id": "submit",
+      "seq": 58,
+      "title": "提交报告和网页",
+      "detail": "两个 Studio 的提交 Hook 均通过，PPTX 和站点文件进入同一批交付。",
+      "events": [
+        "submit_results",
+        "artifact.created",
+        "run.completed"
+      ]
+    }
+  ],
+  "previews": [
+    {
+      "id": "deck",
+      "kind": "slides",
+      "label": "PowerPoint",
+      "slides": [
+        {
+          "path": "replays/weekly-review/slide-1.png",
+          "title": "Tinjauan kinerja mingguan"
+        },
+        {
+          "path": "replays/weekly-review/slide-2.png",
+          "title": "Nilai pesanan per kategori"
+        },
+        {
+          "path": "replays/weekly-review/slide-3.png",
+          "title": "Pemeriksaan berikutnya"
+        }
+      ]
+    },
+    {
+      "id": "dashboard",
+      "kind": "html",
+      "label": "筛选网页",
+      "path": "replays/weekly-review/dashboard.html",
+      "title": "店铺周报筛选网页"
+    }
+  ],
+  "downloads": [
+    {
+      "path": "replays/weekly-review/review.pptx",
+      "label": "下载 PPTX"
+    },
+    {
+      "path": "replays/weekly-review/metrics.json",
+      "label": "指标 JSON"
+    }
+  ]
+}
