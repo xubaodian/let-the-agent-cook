@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from agent_cook.context.policy import OUTPUT_TOKEN_LIMIT
 from agent_cook.model.client import ModelTurn
 from agent_cook.state.session import Message
 from agent_cook.tools.spec import ToolCall, ToolDefinition
@@ -27,6 +28,7 @@ class OpenRouterModel:
         request: dict[str, Any] = {
             "model": model,
             "messages": [_encode_message(message) for message in messages],
+            "max_completion_tokens": OUTPUT_TOKEN_LIMIT,
         }
         if tools:
             request["tools"] = [

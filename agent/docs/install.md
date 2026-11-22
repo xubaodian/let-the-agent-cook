@@ -73,13 +73,7 @@ sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 
 对话默认使用 Chat Completions。要启用 Responses，可传入 `--model-api responses`、在任务或用户配置中设置 `model_api`，或设置 `OPENROUTER_MODEL_API`。用模型目录的 `chat_apis` 为指定模型设置协议。 [OpenRouter Responses](https://openrouter.ai/docs/api_reference/responses/overview)
 
-### 上下文窗口与压缩
-
-每次运行按对话模型 ID 查询 OpenRouter 模型目录的 `context_length`。结果在当前进程缓存。查不到窗口时使用 32,768 token。需要显式设定时，命令行 `--context-window` 优先于 `agent-cook.json` 的 `run.context_window`。若旧配置固定了 32,768，可以删掉该字段，让窗口随模型变化。 [OpenRouter 模型目录](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties)
-
-交互式 CLI 在每次运行开始时显示窗口、输入预算和压缩阈值。32,768 token 的窗口预留 4,096 个输出 token 和 1,024 个安全余量，输入预算为 27,648。压缩阈值是输入预算的 80%，向下取整后为 22,118。较小的模型窗口按比例缩小预留。运行过程会优先保留最近两轮完整的工具调用和结果，再用 checkpoint 替代旧记录。
-
-出现无效 checkpoint 且原输入已经超过预算时，Agent Cook 会用更简短的压缩请求重试一次。终端与 JSONL 都会记录压缩成败。手动调整窗口时，应以所选模型支持的大小为准，例如 `./cook --context-window 128000`。
+选择对话模型时，请确认其上下文窗口和最大输出满足固定预算。 [上下文预算与压缩](architecture.md#上下文预算与压缩)
 
 ## 构建和发布
 

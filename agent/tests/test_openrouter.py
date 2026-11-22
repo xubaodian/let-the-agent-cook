@@ -85,6 +85,8 @@ class CliTest(unittest.TestCase):
 
         with TemporaryDirectory() as directory:
             trace = Path(directory) / "run.jsonl"
+            config = Path(directory) / "config.json"
+            config.write_text('{"run":{"context_window":32768}}', encoding="utf-8")
             stdout = io.StringIO()
             stderr = io.StringIO()
             sdk = SimpleNamespace(AsyncOpenAI=ClientContext)
@@ -92,11 +94,13 @@ class CliTest(unittest.TestCase):
             with (
                 patch.dict(os.environ, environment),
                 patch.dict(sys.modules, {"openai": sdk}),
-                patch("agent_cook.runner.openrouter_context_windows", return_value={"fixture/model": 128_000}),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
-                status = main(["--sandbox", "none", "Say hello. " + "x" * 96_000, "--trace", str(trace)])
+                status = main([
+                    "--sandbox", "none", "--config", str(config), "--context-window", "32768",
+                    "Say hello. " + "x" * 96_000, "--trace", str(trace),
+                ])
                 duplicate_status = main(["--sandbox", "none", "Try again", "--trace", str(trace)])
             raw_trace = trace.read_text(encoding="utf-8")
             events = [json.loads(line) for line in raw_trace.splitlines()]
@@ -111,9 +115,9 @@ class CliTest(unittest.TestCase):
         self.assertNotIn("tools", create.call_args.kwargs)
         self.assertNotIn("test-key", raw_trace)
         self.assertEqual([event["seq"] for event in events], [1, 2, 3, 4])
-        self.assertEqual(events[0]["data"]["context_window"], 128_000)
-        self.assertEqual(events[0]["data"]["input_budget"], 122_880)
-        self.assertEqual(events[0]["data"]["compaction_threshold"], 98_304)
+        self.assertEqual(events[0]["data"]["input_budget"], 360_000)
+        self.assertEqual(events[0]["data"]["max_output_tokens"], 50_000)
+        self.assertEqual(create.call_args.kwargs["max_completion_tokens"], 50_000)
         self.assertEqual(events[-1]["data"]["text"], "The kitchen is ready.")
 
 
@@ -151,6 +155,8 @@ class ModelRetryTest(unittest.IsolatedAsyncioTestCase):
 
         def respond(request):
             requests.append(request.url.path)
+            output_field = "max_output_tokens" if api == "responses" else "max_completion_tokens"
+            self.assertEqual(json.loads(request.content)[output_field], 50_000)
             output = next(payloads)
             if isinstance(output, int):
                 return httpx.Response(

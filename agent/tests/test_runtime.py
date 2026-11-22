@@ -3,7 +3,6 @@ import unittest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
-from agent_cook.context.policy import ContextPolicy
 from agent_cook.context.prompts import EXECUTION_PROMPT
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec, SubagentSpec
@@ -184,7 +183,6 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
                 run = run_agent(
                     AgentSpec(
                         "fixture/model", tool_names=("fixture",),
-                        context_policy=ContextPolicy(context_window=131_072),
                     ),
                     "Finish the task", model=model, tools=registry,
                 )
@@ -293,18 +291,13 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
             ModelTurn(Message("assistant", "All checks complete."), "stop"),
             ModelTurn(Message("assistant", "Done."), "stop"),
         )
-        records = []
         result = await run_agent(
             AgentSpec("fixture/model", tool_names=("fixture",)), "Review",
             model=model, tools=registry,
-            subagents=(SubagentSpec("reviewer", "Reviews content.", "Review only.", ("fixture",), model="fixture/child"),),
-            model_context_windows={"fixture/child": 64_000}, events=RunEvents(records.append),
+            subagents=(SubagentSpec("reviewer", "Reviews content.", "Review only.", ("fixture",)),),
         )
         self.assertEqual(result.text, "Done.")
         self.assertEqual(handler.await_count, 5)
-        child = next(event for event in records if event.type == "run.started" and event.parent_run_id)
-        self.assertEqual(child.data["context_window"], 64_000)
-        self.assertEqual(child.data["input_budget"], 58_880)
         self.assertEqual(model.next_turn.call_args.kwargs["messages"][-1].content, "All checks complete.")
 
     async def test_subagent_timeout_returns_an_error_to_the_parent(self):

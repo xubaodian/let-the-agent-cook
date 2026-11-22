@@ -41,7 +41,7 @@ _CONFIG = Draft202012Validator(_section(
     ),
     run=_section(
         context_window=_POSITIVE_INTEGER, max_turns=_POSITIVE_INTEGER,
-        # Old config files may still include the removed task deadline.
+        # Accept older context window and task deadline fields in saved configurations.
         timeout={"type": "number", "exclusiveMinimum": 0},
     ),
 ))

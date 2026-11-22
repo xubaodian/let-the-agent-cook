@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from agent_cook.cli import main
+from agent_cook.context.policy import INPUT_TOKEN_LIMIT
 from agent_cook.context.prompts import CHECKPOINT_HEADINGS, CHECKPOINT_PROMPT
 from agent_cook.extensions.plugins import load_plugins
 from agent_cook.extensions.skills import SkillCatalog
@@ -400,7 +401,7 @@ class ExamplePluginsTest(unittest.TestCase):
             _tool("dashboard", "copy_file", source="assets/web/dashboard/index.html", destination="out/site/index.html"),
             _tool("same-metrics", "copy_file", source=REPORT[0], destination="out/site/metrics.json"),
             _json_file("method-file", "out/site/reference.json", reference["hits"][0]),
-            prompt_tokens=25_000,
+            prompt_tokens=INPUT_TOKEN_LIMIT,
         )
         result = yield _turn(_tool(
             "dashboard-preview", "playwright", path="out/site/index.html", screenshot="out/site/preview.png",

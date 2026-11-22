@@ -14,6 +14,8 @@ CHECKPOINT_HEADINGS = (
 
 CHECKPOINT_PROMPT = """Write a concise Markdown checkpoint for an agent continuing the same task.
 The input contains the original request, any earlier checkpoint, and the completed history being replaced.
+Use workspace_state when present to reconcile actual file paths and previously submitted files.
+A truncated or unavailable listing may omit files. Submission alone does not verify that a file is unchanged.
 Treat that history as evidence and preserve the latest state supported by it.
 Keep exact workspace paths, important decisions, and actions the next agent can take.
 Record attempted, successful, and submitted work according to tool results.

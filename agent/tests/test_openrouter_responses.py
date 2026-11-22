@@ -70,6 +70,7 @@ class ResponsesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(second.message.content, "Done.")
         self.assertEqual(second.finish_reason, "stop")
+        self.assertEqual([request["max_output_tokens"] for request in requests], [50_000, 50_000])
         self.assertFalse(requests[0]["store"])
         self.assertNotIn("previous_response_id", requests[0])
         self.assertEqual(requests[0]["include"], ["reasoning.encrypted_content"])
@@ -119,5 +120,6 @@ class ResponsesTest(unittest.IsolatedAsyncioTestCase):
         create = AsyncMock(return_value=response)
         adapter = OpenRouterResponsesModel(SimpleNamespace(responses=SimpleNamespace(create=create)))
         turn = await adapter.next_turn(model="fixture/model", messages=[Message("user", "Start.")], tools=())
+        self.assertEqual(create.call_args.kwargs["max_output_tokens"], 50_000)
         self.assertEqual(turn.finish_reason, "max_output_tokens")
         self.assertFalse(turn.message.tool_calls)

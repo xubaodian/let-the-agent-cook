@@ -55,4 +55,4 @@ agent-cook exec "用英文写一封简短邮件，邀请同事参加周五的项
 做一个自包含的活动介绍页 index.html。用 Playwright 检查页面标题并保存 proof.png，交付网页和截图。
 ```
 
-[站点与案例回放](../site/README.md) · [更多示例](examples/README.md) · [工作区工具](docs/workspace-tools.md) · [插件扩展](docs/plugins.md) · [HTTP 服务](docs/server.md)
+[核心实现](docs/architecture.md) · [站点与案例回放](../site/README.md) · [更多示例](examples/README.md) · [工作区工具](docs/workspace-tools.md) · [插件扩展](docs/plugins.md) · [HTTP 服务](docs/server.md)

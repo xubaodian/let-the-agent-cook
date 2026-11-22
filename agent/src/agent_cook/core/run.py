@@ -3,6 +3,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 
+from agent_cook.context.policy import INPUT_TOKEN_LIMIT, OUTPUT_TOKEN_LIMIT
 from agent_cook.core.delegation import DELEGATE_TOOL, register_delegate
 from agent_cook.core.loop import run_loop
 from agent_cook.core.types import AgentRunError, AgentSpec, RunResult, SubagentSpec
@@ -26,7 +27,6 @@ async def run_agent(
     subagents: Sequence[SubagentSpec] = (),
     hook: ToolHook | None = None,
     session: Session | None = None,
-    model_context_windows: Mapping[str, int] | None = None,
 ) -> RunResult:
     """Run a task and own its resources through completion or cancellation.
 
@@ -41,15 +41,13 @@ async def run_agent(
     tools = tools if tools is not None else ToolRegistry()
     if subagents:
         tools = tools.copy()
-        register_delegate(tools, subagents, spec, model, model_context_windows)
+        register_delegate(tools, subagents, spec, model)
         spec = replace(spec, tool_names=(*spec.tool_names, DELEGATE_TOOL))
     session = session if session is not None else Session()
     session.messages.append(Message(role="user", content=task))
     inputs = dict(input_files) if isinstance(input_files, Mapping) else input_files
-    policy = spec.context_policy
     events.emit(
-        "run.started", model=spec.model, context_window=policy.context_window,
-        input_budget=policy.input_budget, compaction_threshold=policy.compaction_threshold,
+        "run.started", model=spec.model, input_budget=INPUT_TOKEN_LIMIT, max_output_tokens=OUTPUT_TOKEN_LIMIT,
     )
 
     @asynccontextmanager
@@ -75,7 +73,10 @@ async def run_agent(
                         sandbox = await resources.enter_async_context(open_sandbox())
                     return sandbox
 
-            tool_context = ToolContext(events.run_id, frozenset(spec.tool_names), get_sandbox, events, hook)
+            tool_context = ToolContext(
+                events.run_id, frozenset(spec.tool_names), get_sandbox, events, hook,
+                current_sandbox=lambda: sandbox,
+            )
             result = await run_loop(
                 spec, session, model=model, tools=tools, tool_context=tool_context, events=events,
             )

@@ -1,4 +1,3 @@
-import asyncio
 import os
 from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
@@ -17,7 +16,6 @@ from agent_cook.model.catalog import MODEL_APIS
 from agent_cook.model.client import ModelTurn
 from agent_cook.model.openrouter import OPENROUTER_BASE_URL, OpenRouterModel
 from agent_cook.model.openrouter_images import OpenRouterImageGenerator
-from agent_cook.model.openrouter_metadata import openrouter_context_windows
 from agent_cook.model.openrouter_responses import OpenRouterResponsesModel
 from agent_cook.protocol.request import WebOptions
 from agent_cook.retry import RETRY_DELAYS
@@ -68,7 +66,6 @@ async def run_task(
     exa_api_key: str | None = None,
     browser_factory: SandboxFactory | None = None,
     session: Session | None = None,
-    discover_context_window: bool = False,
 ) -> RunResult:
     """Assemble and execute one task for either the CLI or HTTP service."""
     if model_api is not None and model_api not in MODEL_APIS:
@@ -76,10 +73,6 @@ async def run_task(
 
     from httpx import Timeout
     from openai import AsyncOpenAI
-
-    windows = await asyncio.to_thread(openrouter_context_windows) if discover_context_window else {}
-    if window := windows.get(spec.model):
-        spec = replace(spec, context_policy=spec.context_policy.for_model(window))
 
     # Time out a stalled HTTP attempt before the model call's deadline.
     async with AsyncExitStack() as resources:
@@ -153,5 +146,4 @@ async def run_task(
             subagents=tuple(agent for plugin in plugins for agent in plugin.subagents),
             hook=HookRunner(hooks) if hooks else None,
             session=session,
-            model_context_windows=windows,
         )

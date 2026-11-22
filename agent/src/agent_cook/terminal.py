@@ -60,10 +60,10 @@ def prompt_reader(directory: Path):
 
 
 def show_progress(event: RunEvent) -> None:
-    if event.type == "run.started" and event.parent_run_id is None and "context_window" in event.data:
+    if event.type == "run.started" and event.parent_run_id is None and "input_budget" in event.data:
         print(
-            f"  Context window {event.data['context_window']:,} tokens. "
-            f"Input budget {event.data['input_budget']:,}. Compact at {event.data['compaction_threshold']:,}.",
+            f"  Compact above {event.data['input_budget']:,} input tokens. "
+            f"Each model call allows up to {event.data['max_output_tokens']:,} output tokens.",
             file=sys.stderr,
         )
     elif event.type == "tool.started":
