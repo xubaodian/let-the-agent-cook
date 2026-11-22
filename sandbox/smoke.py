@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pypdfium2
 from docx import Document
 from openpyxl import load_workbook
 from PIL import Image
@@ -23,12 +24,29 @@ def check_files(directory: Path) -> None:
     workbook = load_workbook(xlsx)
     assert workbook.active["A3"].value == 4
     workbook.close()
+    parquet = directory / "sample.parquet"
+    pd.DataFrame({"value": [2, 4]}).to_parquet(parquet)
+    assert pd.read_parquet(parquet)["value"].sum() == 6
 
     pptx = directory / "sample.pptx"
     presentation = Presentation()
-    presentation.slides.add_slide(presentation.slide_layouts[6])
+    for title in ("Agent Cook", "数据汇报"):
+        slide = presentation.slides.add_slide(presentation.slide_layouts[0])
+        slide.shapes.title.text = title
     presentation.save(pptx)
-    assert len(Presentation(pptx).slides) == 1
+    assert len(Presentation(pptx).slides) == 2
+    subprocess.run([
+        "soffice", f"-env:UserInstallation={(directory / 'office-profile').as_uri()}", "--headless",
+        "--convert-to", "pdf:impress_pdf_Export", "--outdir", str(directory), str(pptx),
+    ], check=True, timeout=60)
+    preview = directory / "sample.pdf"
+    with pypdfium2.PdfDocument(preview) as pages:
+        assert len(pages) == 2
+        page = pages[0]
+        bitmap = page.render()
+        assert bitmap.to_pil().size[0] > 100
+        bitmap.close()
+        page.close()
 
     docx = directory / "sample.docx"
     document = Document()
@@ -36,7 +54,7 @@ def check_files(directory: Path) -> None:
     document.save(docx)
     assert Document(docx).paragraphs[0].text == "Agent Cook"
 
-    pdf = directory / "sample.pdf"
+    pdf = directory / "blank.pdf"
     pages = PdfWriter()
     pages.add_blank_page(width=120, height=120)
     pages.write(pdf)

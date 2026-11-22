@@ -58,7 +58,9 @@ jobs:
         env:
           AGENT_COOK_TEST_NATIVE: '1'
           PYTHONUTF8: '1'
-        run: uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_native_sandbox.py -v
+        run: |
+          uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_native_sandbox.py -v
+          uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_dependency_tools.py -v
       - name: Inspect failed macOS isolation
         if: failure() && runner.os == 'macOS'
         run: |
@@ -67,6 +69,14 @@ jobs:
           for report in "$HOME"/Library/Logs/DiagnosticReports/{sandbox-exec,true,python,node,chrome-headless-shell}-*.ips; do
             if [[ -f "$report" ]]; then sed -n '1,55p' "$report"; fi
           done
+      - name: Render a PowerPoint in the native Ubuntu sandbox
+        if: runner.os == 'Linux'
+        env:
+          AGENT_COOK_TEST_NATIVE: '1'
+          AGENT_COOK_TEST_OFFICE: '1'
+        run: |
+          ./cook setup-runtime --with-office
+          uv run --project agent --no-sync python -m unittest discover -s agent/tests -p test_native_sandbox.py -k renders_pptx -v
       - name: Install WiX
         if: runner.os == 'Windows'
         shell: pwsh

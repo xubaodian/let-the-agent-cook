@@ -45,6 +45,7 @@ function Install-Environment {
     Write-Host "Installing Agent Cook with Python $pythonVersion ..."
     & $uv sync --project $project --locked --python $pythonVersion --extra examples --extra server --extra e2b
     if ($LASTEXITCODE -ne 0) { throw "Could not install the locked Agent Cook dependencies." }
+    $env:AGENT_COOK_UV = $uv
 }
 
 $words = [System.Collections.Generic.List[string]]::new()
@@ -55,13 +56,24 @@ try {
         if ($words.Count -and $words[0] -eq "--launch") {
             $words.RemoveAt(0)
             Install-Environment
+            $runtimeArgs = @()
+            if ($words.Count -and $words[0] -eq "--with-office") {
+                $runtimeArgs = @($words[0])
+                $words.RemoveAt(0)
+            }
+            & $python -m agent_cook setup-runtime @runtimeArgs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         } else {
-            if ($words.Count -and ($words.Count -ne 1 -or $words[0] -ne "--docker")) {
-                throw "Usage: cook.cmd setup [--docker]"
+            if ($words.Count -gt 1 -or ($words.Count -eq 1 -and $words[0] -notin @("--docker", "--with-office"))) {
+                throw "Usage: cook.cmd setup [--docker|--with-office]"
             }
             Install-Environment
-            if (!$words.Count) { exit 0 }
-            $words[0] = "docker"
+            if ($words.Count -and $words[0] -eq "--docker") {
+                $words[0] = "docker"
+            } else {
+                & $python -m agent_cook setup-runtime @words
+                exit $LASTEXITCODE
+            }
         }
     }
     if (!(Test-Path -LiteralPath $python -PathType Leaf)) {

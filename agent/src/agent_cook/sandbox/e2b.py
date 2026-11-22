@@ -58,6 +58,7 @@ class E2BSandboxFactory:
         self._api_key = api_key
         self._allow_network = allow_network
         self._lifetime_seconds = lifetime_seconds
+        self.supports_dependency_installation = allow_network
 
     @asynccontextmanager
     async def open(self, run_id: str) -> AsyncIterator[Sandbox]:

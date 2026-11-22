@@ -60,6 +60,7 @@ class DockerSandboxFactory:
             raise ValueError("Provide a Docker image name.")
         self._image = image
         self._network = "bridge" if allow_network else "none"
+        self.supports_dependency_installation = allow_network
 
     async def reclaim(self, run_id: str) -> None:
         for label in (run_id, f"{run_id}-web"):

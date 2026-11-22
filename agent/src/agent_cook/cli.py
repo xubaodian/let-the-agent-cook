@@ -32,6 +32,8 @@ from agent_cook.sandbox.e2b import E2BSandboxFactory
 from agent_cook.sandbox.interface import SandboxError, SandboxFactory
 from agent_cook.sandbox.limits import MAX_TRANSFER_BYTES
 from agent_cook.sandbox.native.factory import NativeSandboxFactory
+from agent_cook.sandbox.native.office import prepare_office
+from agent_cook.sandbox.native.runtime import prepare_runtime
 from agent_cook.settings import DATA, AgentConfig, model_catalog, release_image, saved_model
 from agent_cook.state.local import LocalSession, LocalSessions
 from agent_cook.terminal import file_mentions, prompt_reader, show_progress
@@ -160,7 +162,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     name = "agent-cook" if mode == "local" else f"agent-cook {mode}"
     parser = argparse.ArgumentParser(
         prog=name, description="Run tasks with your OpenRouter model.",
-        epilog="Commands: exec, resume, doctor, serve. Run without a task to start an interactive session.",
+        epilog="Commands: exec, resume, doctor, setup-runtime, serve. Run without a task to start an interactive session.",
     )
     parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
     if mode in ("local", "exec"):
@@ -187,6 +189,8 @@ def _parser(mode: str) -> argparse.ArgumentParser:
         parser.add_argument("--json", action="store_true", help="Stream JSONL run events on stdout")
     if mode == "doctor":
         parser.add_argument("--runtime", action="store_true", help="Prepare and test Python, Node.js, and Chromium")
+    if mode == "setup-runtime":
+        parser.add_argument("--with-office", action="store_true", help="Install LibreOffice for PowerPoint rendering")
     parser.add_argument("--trace", type=Path, help="Write the run to a new JSONL file at this path")
     service = mode in ("serve", "docker")
     parser.add_argument(
@@ -574,10 +578,17 @@ def main(argv: list[str] | None = None) -> int:
         from agent_cook.sandbox.native.windows import chromium_process
 
         return chromium_process(words[1:])
-    mode = words.pop(0) if words and words[0] in ("exec", "resume", "doctor", "docker", "serve") else "local"
+    modes = ("exec", "resume", "doctor", "setup-runtime", "docker", "serve")
+    mode = words.pop(0) if words and words[0] in modes else "local"
     parser = _parser(mode)
     args = parser.parse_args(words)
     try:
+        if mode == "setup-runtime":
+            asyncio.run(prepare_runtime())
+            if args.with_office:
+                prepare_office()
+            print("The native workspace runtime is ready.", file=sys.stderr)
+            return 0
         if args.list_plugins:
             print(json.dumps([{
                 "name": plugin.name, "description": plugin.description, "skills": plugin.skill_refs,

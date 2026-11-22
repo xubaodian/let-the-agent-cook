@@ -23,6 +23,7 @@ from agent_cook.sandbox.interface import SandboxFactory
 from agent_cook.sandbox.native.factory import NativeSandboxFactory
 from agent_cook.state.session import Message, Session
 from agent_cook.tools.artifacts import ArtifactExporter
+from agent_cook.tools.dependencies import register_dependency_tool
 from agent_cook.tools.images import register_image_tool
 from agent_cook.tools.public_browser import PublicBrowser
 from agent_cook.tools.registry import ToolRegistry
@@ -92,6 +93,8 @@ async def run_task(
             registry, tool_names = workspace_tools(
                 exporter, public_browser=browser, native_preview=isinstance(factory, NativeSandboxFactory),
             )
+            if getattr(factory, "supports_dependency_installation", False):
+                tool_names += (register_dependency_tool(registry),)
             if image_model is not None:
                 image_tool = register_image_tool(registry, OpenRouterImageGenerator(client, image_model))
                 tool_names = (*tool_names, image_tool)
