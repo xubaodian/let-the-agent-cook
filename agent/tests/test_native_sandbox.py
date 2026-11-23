@@ -6,7 +6,7 @@ import socket
 import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from shutil import copytree
 from tempfile import TemporaryDirectory
 from textwrap import dedent
@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, patch
 from agent_cook.cli import main
 from agent_cook.sandbox.native.executor import environment, execute
 from agent_cook.sandbox.native.factory import NativeSandboxFactory
+from agent_cook.sandbox.native.office import probe_office
 from agent_cook.settings import DATA
 from test_cli_entry import ENV, sdk, tool
 from test_openrouter import response
@@ -88,16 +89,21 @@ class NativeDeliveryTest(unittest.TestCase):
         )
         excel = _SALES.removesuffix(".csv") + ".xlsx"
         deck = _SALES.removesuffix(".csv") + ".pptx"
+        pdf = _SALES.removesuffix(".csv") + ".pdf"
         with patch("agent_cook.cli._open_directory") as open_results:
             status = self.run_task([
                 tool(1, "submit_results", paths=[_SALES]),
                 tool(2, "run_command", argv=["node", "-e", node]),
                 tool(3, "run_command", argv=["python", "-c", _OFFICE, _SALES, "label.txt"]),
-                tool(4, "playwright", path="index.html", actions=[
+                tool(4, "run_command", argv=[
+                    "soffice", "--headless", "--convert-to", "pdf:impress_pdf_Export",
+                    "--outdir", str(PurePosixPath(deck).parent), deck,
+                ]),
+                tool(5, "playwright", path="index.html", actions=[
                     {"action": "click", "selector": "button"},
                     {"action": "expect_text", "selector": "button", "value": "Checked"},
                 ], screenshot="proof.png"),
-                tool(5, "submit_results", paths=[_SALES, excel, deck, "proof.png"]),
+                tool(6, "submit_results", paths=[_SALES, excel, deck, pdf, "proof.png"]),
                 response("Delivered."),
             ], interactive=True)
         self.assertEqual(status, 0, self.stderr.getvalue())
@@ -116,11 +122,12 @@ class NativeDeliveryTest(unittest.TestCase):
         open_results.assert_called_once_with(results)
         self.assertIn(str(results), self.stderr.getvalue())
         self.assertEqual((results / _SALES).read_text(encoding="utf-8"), "modified copy")
-        self.assertEqual(len([file for file in results.rglob("*") if file.is_file()]), 4)
+        self.assertEqual(len([file for file in results.rglob("*") if file.is_file()]), 5)
         sheet = load_workbook(results / excel)
         self.assertGreater(sheet.active.max_row, 1)
         sheet.close()
         self.assertEqual(Presentation(results / deck).slides[0].shapes.title.text, "Sales workbook")
+        self.assertTrue((results / pdf).read_bytes().startswith(b"%PDF"))
         self.assertTrue((results / "proof.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
 
     def test_noninteractive_failure_and_cancellation_publish_no_directory(self):
@@ -175,39 +182,11 @@ class NativeBoundaryTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.exit_code, 0, result.stderr)
 
     async def test_renders_pptx_in_the_workspace(self):
-        from pptx import Presentation
-
-        stream = io.BytesIO()
-        presentation = Presentation()
-        for title in ("Agent Cook", "数据汇报"):
-            slide = presentation.slides.add_slide(presentation.slide_layouts[0])
-            slide.shapes.title.text = title
-        presentation.save(stream)
         async with NativeSandboxFactory().open("office-test") as sandbox:
-            await sandbox.put_file("汇报 样例.pptx", stream.getvalue())
-            result = await sandbox.exec([
-                "soffice", "--headless", "--convert-to", "pdf:impress_pdf_Export",
-                "--outdir", ".", "汇报 样例.pptx",
-            ], cwd=".", timeout_seconds=60)
-            diagnostics = f"stdout: {result.stdout}\nstderr: {result.stderr}"
-            self.assertEqual(result.exit_code, 0, diagnostics)
-            self.assertTrue((await sandbox.get_file("汇报 样例.pdf")).startswith(b"%PDF"), diagnostics)
-            verify = await sandbox.exec([
-                "python", "-c",
-                dedent("""
-                    import sys
-                    import pypdfium2
-
-                    with pypdfium2.PdfDocument(sys.argv[1]) as document:
-                        assert len(document) == 2
-                        for index, page in enumerate(document, 1):
-                            page.render().to_pil().save(f"slide-{index}.png")
-                """),
-                "汇报 样例.pdf",
-            ], cwd=".", timeout_seconds=20)
-            self.assertEqual(verify.exit_code, 0, verify.stderr)
+            await probe_office(sandbox)
+            self.assertTrue((await sandbox.get_file("预览 样例.pdf")).startswith(b"%PDF"))
             for index in (1, 2):
-                self.assertTrue((await sandbox.get_file(f"slide-{index}.png")).startswith(b"\x89PNG\r\n\x1a\n"))
+                self.assertTrue((await sandbox.get_file(f"doctor-slide-{index}.png")).startswith(b"\x89PNG\r\n\x1a\n"))
 
     async def test_os_blocks_host_files_credentials_and_loopback(self):
         probe = dedent("""

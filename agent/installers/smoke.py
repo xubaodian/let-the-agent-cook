@@ -45,8 +45,8 @@ def smoke(executable: Path, *, files: bool = False) -> None:
             [str(executable), "doctor", "--runtime", *command[1:]], cwd=directory, env=environment,
             capture_output=True, encoding="utf-8", timeout=240,
         )
-        if doctor.returncode or "OK  Native process isolation" not in doctor.stdout:
-            raise ValueError(f"The installed CLI could not run in native isolation.\n{doctor.stdout}{doctor.stderr}")
+        if doctor.returncode or "OK  Native workspace and PPTX rendering" not in doctor.stdout:
+            raise ValueError(f"The installed CLI could not verify the native workspace.\n{doctor.stdout}{doctor.stderr}")
         if files:
             verify_delivery(executable, Path(directory), sales[0], workspace)
 

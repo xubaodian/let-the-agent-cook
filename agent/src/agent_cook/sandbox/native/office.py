@@ -3,8 +3,9 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from textwrap import dedent
 
-from agent_cook.sandbox.interface import SandboxError
+from agent_cook.sandbox.interface import Sandbox, SandboxError
 
 _DOWNLOAD = "https://www.libreoffice.org/download/"
 
@@ -60,3 +61,51 @@ def prepare_office() -> None:
         raise SandboxError(f"Could not install LibreOffice. See {_DOWNLOAD} for installers.") from error
     if office_executable() is None:
         raise SandboxError("LibreOffice installation finished, but Agent Cook could not find soffice.")
+
+
+async def probe_office(sandbox: Sandbox) -> None:
+    deck = "预览 样例.pptx"
+    pdf = "预览 样例.pdf"
+    make_deck = dedent("""
+        import sys
+        from pptx import Presentation
+
+        deck = Presentation()
+        for title in ("Agent Cook", "预览检查"):
+            slide = deck.slides.add_slide(deck.slide_layouts[0])
+            slide.shapes.title.text = title
+        deck.save(sys.argv[1])
+    """)
+    render_pages = dedent("""
+        import sys
+        import pypdfium2
+
+        with pypdfium2.PdfDocument(sys.argv[1]) as document:
+            if len(document) != 2:
+                raise RuntimeError(f"Expected 2 PDF pages, got {len(document)}.")
+            for index, page in enumerate(document, 1):
+                page.render().to_pil().save(f"doctor-slide-{index}.png")
+    """)
+    stages = (
+        ("create the sample deck", ("python", "-I", "-c", make_deck, deck), 20),
+        (
+            "export PPTX to PDF",
+            ("soffice", "--headless", "--convert-to", "pdf:impress_pdf_Export", "--outdir", ".", deck),
+            60,
+        ),
+        ("render the PDF pages to PNG", ("python", "-I", "-c", render_pages, pdf), 20),
+    )
+    for step, argv, timeout in stages:
+        try:
+            result = await sandbox.exec(argv, cwd=".", timeout_seconds=timeout)
+        except SandboxError as error:
+            raise SandboxError(f"PPTX rendering check could not {step}. {error}") from error
+        detail = (result.stderr.strip() or result.stdout.strip())[-450:]
+        if result.timed_out or result.exit_code:
+            status = f"timed out after {timeout} seconds" if result.timed_out else f"exit code {result.exit_code}"
+            raise SandboxError(f"PPTX rendering check could not {step} ({status}). {detail}".rstrip())
+        if argv[0] == "soffice":
+            try:
+                await sandbox.get_file(pdf)
+            except SandboxError as error:
+                raise SandboxError(f"LibreOffice exited successfully without producing the PDF. {detail}".rstrip()) from error

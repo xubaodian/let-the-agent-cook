@@ -46,7 +46,7 @@
 
 1. 打开 Agent Cook。按 Enter 在浏览器授权 OpenRouter，或输入 `key` 无回显粘贴已有 Key。可录入 Exa Key 或按 Enter 跳过，然后选择对话模型或输入模型 ID。
 2. 输入 `/example` 生成样例目录。把终端给出的任务粘贴回 CLI。处理自己的文件时，可用 `@路径` 或 `@"带空格的目录"` 选择文件夹。多个输入可以一起选择。
-3. 本地脚本通过系统沙箱执行。Linux 源码用户需安装 Bubblewrap，例如在 Ubuntu 运行 `sudo apt install bubblewrap`。用 `agent-cook doctor --runtime` 可验证 Python、Node.js、npm、Chromium 和 LibreOffice。
+3. 本地脚本通过系统沙箱执行。Linux 源码用户需安装 Bubblewrap，例如在 Ubuntu 运行 `sudo apt install bubblewrap`。用 `agent-cook doctor --runtime` 可验证 Python、Node.js、npm、Chromium，并在沙箱里把样例 PPTX 转成 PDF 和逐页 PNG。
 4. 成功后，终端会显示结果目录的绝对路径。输入 `/open` 可在文件管理器打开。
 
 附加目录时保留目录名和文件层级，原件保留在宿主机。每个文件最多 16 MiB，一批输入最多 32 MiB。导入跳过目录内的符号链接与 Windows 联接。路径冲突会提示具体文件或文件夹。成功后 `<run_id>-results/` 包含通过最终校验的产物。提交批次与记录在同一层，供回放与续接使用。

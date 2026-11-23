@@ -81,7 +81,8 @@ _FILES = (
 
 _COMMAND = _definition(
     "run_command",
-    "Run a program inside the task sandbox. Use argv with a workspace-relative cwd. Returns exit code and bounded output.",
+    "Run a program inside the task sandbox. Use argv with a workspace-relative cwd. Returns exit code and bounded output. "
+    "For PowerPoint previews, put soffice first in argv to invoke LibreOffice directly.",
     {
         "argv": _ARGV,
         "cwd": _PATH,

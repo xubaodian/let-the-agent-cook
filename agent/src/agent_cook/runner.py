@@ -115,7 +115,10 @@ async def run_task(
                 if plugin.skill_refs:
                     instructions += f"\nReferenced skills: {', '.join(plugin.skill_refs)}."
         if hosted_web or exa_names:
-            instructions += "\n\nUse web search to find sources and web fetch to read a known URL. Cite the sources you use."
+            instructions += (
+                "\n\nWeb search and web fetch run outside the task sandbox. Use the complete search query to find "
+                "sources and the full URL to read a known page. Cite the sources you use."
+            )
         if browser_factory is not None:
             instructions += (
                 "\n\nUse Playwright on an approved public origin when reading the page requires interaction or a screenshot."

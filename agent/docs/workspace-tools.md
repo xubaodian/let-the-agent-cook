@@ -60,7 +60,7 @@ flowchart TD
 | 数据与绘图 | pandas、NumPy、SciPy、PyArrow、Matplotlib |
 | 文本与配置 | charset-normalizer、PyYAML |
 
-本地工作区用 LibreOffice 的 `soffice` 将 PPTX 转成 PDF，再用 pypdfium2 生成逐页图片。安装新版时会准备 LibreOffice，已有安装也可单独运行 `agent-cook setup-runtime` 补齐依赖。服务端镜像自带无界面的 Impress 和中日韩字体。 [依赖清单](../src/agent_cook/data/native/workspace-requirements.txt) · [LibreOffice](https://www.libreoffice.org/download/)
+本地工作区用 LibreOffice 的 `soffice` 将 PPTX 转成 PDF，再用 pypdfium2 生成逐页图片。在 `run_command` 的 `argv` 首项直接传入 `soffice`，原生沙箱会解析到已安装的程序。用 `agent-cook doctor --runtime` 测试沙箱内的实际渲染。安装新版时会准备 LibreOffice，已有安装也可单独运行 `agent-cook setup-runtime` 补齐依赖。服务端镜像自带无界面的 Impress 和中日韩字体。 [依赖清单](../src/agent_cook/data/native/workspace-requirements.txt) · [LibreOffice](https://www.libreoffice.org/download/)
 
 `install_dependencies` 接受包名和可选的精确版本。安装结果在当前任务中可复用，后端回收任务工作区时一并清除。本地由专用安装器访问公共包仓库，普通任务命令继续离线。Docker 和同源 E2B 模板需要更新镜像并启用 `--sandbox-network`，工具才可用。
 

@@ -59,6 +59,21 @@ class CliEntryTest(unittest.TestCase):
         office.assert_called_once_with()
         self.assertIn("Could not prepare LibreOffice.", stderr.getvalue())
 
+    def test_doctor_runtime_reports_pptx_conversion_failure(self):
+        with (
+            patch.dict(os.environ, ENV),
+            patch(
+                "agent_cook.cli.NativeSandboxFactory.probe",
+                side_effect=SandboxError("PPTX rendering check could not export PPTX to PDF (exit code 1)."),
+            ) as probe,
+            redirect_stdout(io.StringIO()) as output,
+            redirect_stderr(io.StringIO()) as diagnostics,
+        ):
+            self.assertEqual(main(["doctor", "--runtime", "--sandbox", "native"]), 1)
+        probe.assert_awaited_once_with(runtime=True)
+        self.assertIn("Missing  Native workspace and PPTX rendering", output.getvalue())
+        self.assertIn("could not export PPTX to PDF (exit code 1)", diagnostics.getvalue())
+
     def test_exec_accepts_stdin_and_streams_only_events_on_stdout(self):
         create = AsyncMock(return_value=response("Done."))
         with (
