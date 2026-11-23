@@ -16,6 +16,7 @@ from subprocess import run
 from tempfile import mkdtemp
 from uuid import uuid4
 
+from agent_cook.context.policy import CLI_CONTEXT_POLICY
 from agent_cook.core.types import DEFAULT_MAX_MODEL_TURNS, AgentRunError, AgentSpec, RunResult
 from agent_cook.delivery import publish_results, result_snapshots
 from agent_cook.events.diagnostics import local_model_trace
@@ -307,6 +308,8 @@ def _execute(args, prepared, task, api_key, inputs, *, local_session=None, obser
     if inputs and prepared[1] is None:
         raise ValueError("Input files require the local workspace.")
     spec, factory, options = prepared
+    if local_session is not None:
+        spec = replace(spec, context_policy=CLI_CONTEXT_POLICY)
     run_id = uuid4().hex
     session_date = local_session.created_on if local_session else date.today().isoformat()
     session_id = local_session.id if local_session else run_id

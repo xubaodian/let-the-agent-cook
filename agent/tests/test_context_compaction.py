@@ -1,15 +1,17 @@
+import asyncio
 import json
 import unittest
 from unittest.mock import AsyncMock
 
 from agent_cook.context.budget import PromptBudget, estimate_messages
-from agent_cook.context.policy import INPUT_TOKEN_LIMIT
+from agent_cook.context.builder import build_context
+from agent_cook.context.policy import CLI_CONTEXT_POLICY, INPUT_TOKEN_LIMIT, RETAINED_USER_TOKEN_LIMIT
 from agent_cook.context.prompts import CHECKPOINT_HEADINGS, EXECUTION_PROMPT
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec
 from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelTurn
-from agent_cook.state.session import Message
+from agent_cook.state.session import COMPLETION_CHECK_PREFIX, Checkpoint, Message, Session
 from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.spec import ToolCall, ToolDefinition, ToolResult
 from test_runtime import ScriptedModel
@@ -178,3 +180,76 @@ class ContextCompactionTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(AgentRunError, "exceeds the 360000-token input budget"):
             await run_agent(AgentSpec("fixture/model"), "A" * 1_100_000, model=model)
         model.next_turn.assert_not_awaited()
+
+    async def test_short_interactive_history_stays_verbatim(self):
+        session = Session([Message("user", "Use metric units."), Message("assistant", "Understood.")])
+        model = ScriptedModel(ModelTurn(Message("assistant", "Done."), "stop"))
+        await run_agent(
+            AgentSpec("fixture/model", context_policy=CLI_CONTEXT_POLICY),
+            "Show the next value.", model=model, session=session,
+        )
+        model.next_turn.assert_awaited_once()
+        self.assertEqual(model.next_turn.call_args.kwargs["messages"][1:3], tuple(session.messages[:2]))
+        self.assertIsNone(session.checkpoint)
+
+    def test_checkpoint_retains_recent_user_requests_within_the_budget(self):
+        large_request = Message("user", "A" * RETAINED_USER_TOKEN_LIMIT * 3)
+        earlier = Message("user", "Write the report in English.")
+        latest = Message("user", "Make the totals easy to compare.")
+        new = Message("user", "Revise the charts.")
+        session = Session([
+            large_request, earlier, _call(1).message, Message("tool", "Detailed totals", tool_call_id="call-1"),
+            latest, Message("user", COMPLETION_CHECK_PREFIX + "Submit first."), Message("assistant", "Delivered."),
+            new,
+        ], checkpoint=Checkpoint(7, _CHECKPOINT))
+
+        messages = build_context("", session, policy=CLI_CONTEXT_POLICY, task_start=7)
+
+        self.assertEqual(messages[:2], (earlier, latest))
+        self.assertLessEqual(estimate_messages(messages[:2]), RETAINED_USER_TOKEN_LIMIT)
+        self.assertTrue(messages[2].content.endswith(_CHECKPOINT))
+        self.assertEqual(messages[3:], (new,))
+
+    async def test_a_later_task_keeps_its_own_request_during_compaction(self):
+        task = "Revise the current presentation."
+        first = Message("user", "Check yesterday's totals.")
+        session = Session([first, Message("assistant", "Checked yesterday's totals.")])
+        registry = ToolRegistry()
+        registry.register(_FIXTURE, AsyncMock(return_value=ToolResult("Observed.")))
+        model = ScriptedModel(
+            _call(1, prompt_tokens=INPUT_TOKEN_LIMIT),
+            ModelTurn(Message("assistant", _CHECKPOINT), "stop"),
+            ModelTurn(Message("assistant", "Revised."), "stop"),
+        )
+        await run_agent(
+            AgentSpec("fixture/model", tool_names=(_FIXTURE.name,)),
+            task, model=model, tools=registry, session=session,
+        )
+        summary = json.loads(model.next_turn.call_args_list[1].kwargs["messages"][-1].content)
+        self.assertEqual(summary["task"], task)
+        self.assertEqual(summary["completed_history"][0]["content"], first.content)
+        continued = model.next_turn.call_args.kwargs["messages"]
+        self.assertIn(Message("user", task), continued)
+        self.assertNotIn(first, continued)
+        self.assertEqual(continued[-1].tool_call_id, "call-1")
+
+    async def test_optional_checkpoint_failure_preserves_completed_result(self):
+        observation = "Saved intermediate data.\n" + "A" * 100_000
+        for error, reason in ((RuntimeError("Unavailable."), "checkpoint_model_error"),
+                              (asyncio.CancelledError(), "cancelled")):
+            with self.subTest(reason=reason):
+                registry = ToolRegistry()
+                registry.register(_FIXTURE, AsyncMock(return_value=ToolResult(observation)))
+                records = []
+                session = Session()
+                model = ScriptedModel(_call(1), ModelTurn(Message("assistant", "Delivered."), "stop"), error)
+                result = await run_agent(
+                    AgentSpec("fixture/model", tool_names=(_FIXTURE.name,), context_policy=CLI_CONTEXT_POLICY),
+                    "Process the data.", model=model, tools=registry, session=session, events=RunEvents(records.append),
+                )
+                self.assertEqual(result.text, "Delivered.")
+                self.assertIsNone(session.checkpoint)
+                self.assertEqual(session.messages[-2].content, observation)
+                self.assertEqual(records[-1].type, "run.completed")
+                failed = next(event.data for event in records if event.type == "context.compaction_failed")
+                self.assertEqual((failed["phase"], failed["reason"]), ("post_turn", reason))

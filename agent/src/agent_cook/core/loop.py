@@ -10,7 +10,7 @@ from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelCallTimeout, ModelClient, model_call_deadline
 from agent_cook.protocol.artifacts import ArtifactRef
 from agent_cook.sandbox.interface import SandboxError
-from agent_cook.state.session import Message, Session
+from agent_cook.state.session import COMPLETION_CHECK_PREFIX, Message, Session
 from agent_cook.tools.artifacts import SUBMIT_RESULTS, stale_submissions
 from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.spec import SubmittedFile, ToolContext
@@ -24,6 +24,7 @@ async def run_loop(
     tools: ToolRegistry,
     tool_context: ToolContext,
     events: RunEvents,
+    task_start: int = 0,
 ) -> RunResult:
     definitions = tools.definitions(spec.tool_names)
     require_submission = spec.require_submission
@@ -47,6 +48,7 @@ async def run_loop(
             messages = await prepare_context(
                 instructions, session, policy=spec.context_policy, budget=budget,
                 model=model, model_id=spec.model, events=events, workspace_state=workspace_state,
+                task_start=task_start,
             )
         except ContextLimitError as error:
             raise AgentRunError(str(error)) from error
@@ -90,12 +92,22 @@ async def run_loop(
             if feedback:
                 if turn_number == spec.max_model_turns:
                     raise AgentRunError(feedback)
-                session.messages.append(Message("user", f"Runtime completion check. {feedback}"))
+                session.messages.append(Message("user", COMPLETION_CHECK_PREFIX + feedback))
                 events.emit("run.submission_required", turn=turn_number)
                 continue
             final_artifacts = tuple(file.artifact for file in submitted.values())
             if not require_submission:
                 final_artifacts += tuple(artifact for key, artifact in artifacts.items() if key not in delivery_artifacts)
+            if events.parent_run_id is None and spec.context_policy.post_turn_token_limit is not None:
+                try:
+                    await prepare_context(
+                        instructions, session, policy=spec.context_policy, budget=budget,
+                        model=model, model_id=spec.model, events=events, workspace_state=workspace_state,
+                        task_start=task_start, after_task=True,
+                    )
+                except asyncio.CancelledError:
+                    # The task and its artifacts have passed completion checks.
+                    events.emit("context.compaction_failed", phase="post_turn", reason="cancelled")
             return RunResult(tool_context.run_id, text, final_artifacts)
 
         if not definitions:

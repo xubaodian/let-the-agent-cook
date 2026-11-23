@@ -44,6 +44,7 @@ async def run_agent(
         register_delegate(tools, subagents, spec, model)
         spec = replace(spec, tool_names=(*spec.tool_names, DELEGATE_TOOL))
     session = session if session is not None else Session()
+    task_start = len(session.messages)
     session.messages.append(Message(role="user", content=task))
     inputs = dict(input_files) if isinstance(input_files, Mapping) else input_files
     events.emit(
@@ -78,7 +79,7 @@ async def run_agent(
                 current_sandbox=lambda: sandbox,
             )
             result = await run_loop(
-                spec, session, model=model, tools=tools, tool_context=tool_context, events=events,
+                spec, session, model=model, tools=tools, tool_context=tool_context, events=events, task_start=task_start,
             )
     except asyncio.CancelledError:
         events.emit("run.cancelled")

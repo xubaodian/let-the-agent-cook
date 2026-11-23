@@ -17,13 +17,16 @@
 | 单次请求输入 | **360,000 tokens** | 发送前估算输入。超过时尝试压缩历史，恰好等于阈值时可发送。 |
 | 单次文本模型输出 | **50,000 tokens** | 每次请求都下发上限。Chat Completions 用 `max_completion_tokens`，Responses 用 `max_output_tokens`。主 Agent、子 Agent 和 checkpoint 请求共用该上限。 |
 | Checkpoint 正文 | **约 1,600 tokens** | 压缩提示要求简洁，收到结果后按本地估算校验正文长度和标题。 |
+| CLI 任务完成后的会话历史 | **32,000 tokens** | 交互式任务成功后估算有效历史，超过时生成供下一条任务使用的 checkpoint。该估算只计会话内容。 |
 
 这些值由运行时固定。请选择支持 **至少 50,000 tokens 输出**的模型和服务商路由，并为输入和输出同时达到上限留出 **410,000 tokens 加估算余量**的上下文。旧版 `run.context_window` 和 `--context-window` 仍可读取或解析，对当前预算无影响。 [预算定义](../src/agent_cook/context/policy.py) · [OpenRouter Chat Completions](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion) · [OpenRouter Responses](https://openrouter.ai/docs/api/api-reference/responses/create-a-response)
 
 1. **估算下一轮输入。** 系统提示、任务、历史消息、工具定义、参数和结果都计入预算。首次按 UTF-8 字节数粗估。模型返回输入用量后，若下一轮保留原请求前缀，则以该用量为基准加上新增消息估算。前缀变化或用量包含服务端网页工具上下文时，使用本地估算。 [预算估算](../src/agent_cook/context/budget.py)
-2. **确定要总结的历史。** 超过 360K 时，优先保留最近两轮完整消息，包含各轮工具调用和结果。保留内容过大时缩短这一段。原始任务继续放在上下文里。 [上下文组装](../src/agent_cook/context/builder.py) · [压缩实现](../src/agent_cook/context/compaction.py)
-3. **调用模型生成 checkpoint。** 输入包含原任务、上次 checkpoint、待替换历史和可用的工作区信息。已打开工作区且允许 `ls` 时，运行时读取最多 80 个相对文件路径，并附上本次已提交的路径。清单省略文件时标记截断。压缩请求同样受 360K 输入预算约束，必要时缩短历史中的长工具参数和结果。 [工作区清单](../src/agent_cook/core/loop.py) · [Checkpoint 提示词](../src/agent_cook/context/prompts.py)
+2. **确定要总结的历史。** 执行中超过 360K 时，优先保留最近两轮完整模型交互，包含工具调用和结果。保留内容过大时缩短这一段。当前任务的用户请求保留原文。 [上下文组装](../src/agent_cook/context/builder.py) · [压缩实现](../src/agent_cook/context/compaction.py)
+3. **调用模型生成 checkpoint。** 输入包含当前任务、上次 checkpoint、待替换历史和可用的工作区信息。已打开工作区且允许 `ls` 时，运行时读取最多 80 个相对文件路径，并附上本次已提交的路径。清单省略文件时标记截断。压缩请求同样受 360K 输入预算约束，必要时缩短历史中的长工具参数和结果。 [工作区清单](../src/agent_cook/core/loop.py) · [Checkpoint 提示词](../src/agent_cook/context/prompts.py)
 4. **校验后继续。** 校验成功后，后续请求用 checkpoint 和保留的近期消息重建历史。标题或长度不合格、压缩后仍超预算时，运行时用更短的压缩请求重试一次。仍无法缩小输入，或原始任务已超预算且没有可压缩历史时，任务给出错误。开始、重试、成功和失败记录在运行事件中。 [压缩实现](../src/agent_cook/context/compaction.py) · [事件日志](../src/agent_cook/events/journal.py)
+
+交互 CLI 在最终答复和交付检查完成后，按 32K 历史阈值判断是否生成会话 checkpoint。压缩成功后，下一条任务与 `resume --last` 使用 checkpoint、最近的完整用户请求（共约 4,096 tokens 以内）及其后的新消息。原先的助手答复、推理和工具调用与结果由摘要接替。Checkpoint 保留任务结论、用户偏好、交付路径、验证状态和待办。压缩失败或取消时，CLI 照常交付，并沿用之前的上下文。单次 `exec` 和 HTTP 服务沿用执行中的 360K 压缩。 [完成检查与压缩](../src/agent_cook/core/loop.py) · [CLI 会话](../src/agent_cook/cli.py)
 
 Checkpoint 使用固定的六个标题，供下一轮恢复任务状态。
 

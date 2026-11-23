@@ -28,27 +28,47 @@ async def prepare_context(
     model_id: str,
     events: RunEvents,
     workspace_state: Callable[[], Awaitable[dict[str, object]]] | None = None,
+    task_start: int = 0,
+    after_task: bool = False,
 ) -> tuple[Message, ...]:
-    messages = build_context(instructions, session)
+    phase = "post_turn" if after_task else "in_task"
+    active_task = None if after_task else task_start
+    limit = INPUT_TOKEN_LIMIT
+    if after_task:
+        instructions, budget = "", PromptBudget()
+        if policy.post_turn_token_limit is None:
+            return build_context(instructions, session, policy=policy, task_start=active_task)
+        limit = policy.post_turn_token_limit
+
+    messages = build_context(instructions, session, policy=policy, task_start=active_task)
     tokens = budget.estimate(messages)
-    if tokens <= INPUT_TOKEN_LIMIT:
+    if tokens <= limit:
         return messages
 
     reason = "no_completed_turns"
-    boundary = _compression_boundary(instructions, session, policy, budget)
+    boundary = len(session.messages) if after_task else _compression_boundary(
+        instructions, session, policy, budget, task_start,
+    )
     if boundary is not None:
-        events.emit("context.compaction_started", estimated_input_tokens=tokens, covered_messages=boundary)
-        workspace = await workspace_state() if workspace_state is not None else {}
+        events.emit("context.compaction_started", estimated_input_tokens=tokens, covered_messages=boundary, phase=phase)
+        workspace = None
         for repair in (False, True):
             if repair:
                 if reason == "checkpoint_did_not_fit":
                     boundary = len(session.messages)
-                events.emit("context.compaction_retry", reason=reason, covered_messages=boundary)
+                events.emit("context.compaction_retry", reason=reason, covered_messages=boundary, phase=phase)
             try:
-                checkpoint = await _summarize(session, boundary, policy, model, model_id, workspace=workspace, repair=repair)
-                candidate = build_context(instructions, session, checkpoint=checkpoint)
+                if workspace is None:
+                    workspace = await workspace_state() if workspace_state is not None else {}
+                checkpoint = await _summarize(
+                    session, boundary, policy, model, model_id,
+                    workspace=workspace, repair=repair, task_start=task_start, after_task=after_task,
+                )
+                candidate = build_context(
+                    instructions, session, policy=policy, checkpoint=checkpoint, task_start=active_task,
+                )
                 reduced = budget.estimate(candidate)
-                if reduced > INPUT_TOKEN_LIMIT:
+                if reduced > limit:
                     raise _CheckpointError("checkpoint_did_not_fit")
             except _CheckpointError as error:
                 reason, error_type = str(error), type(error).__name__
@@ -62,15 +82,17 @@ async def prepare_context(
                 session.checkpoint = checkpoint
                 events.emit(
                     "context.compacted", covered_messages=boundary, checkpoint=checkpoint.markdown,
-                    estimated_input_tokens_before=tokens, estimated_input_tokens_after=reduced,
+                    estimated_input_tokens_before=tokens, estimated_input_tokens_after=reduced, phase=phase,
                 )
                 return candidate
             events.emit(
                 "context.compaction_failed", covered_messages=boundary, reason=reason, error_type=error_type,
-                estimated_input_tokens=tokens, input_budget=INPUT_TOKEN_LIMIT,
+                estimated_input_tokens=tokens, input_budget=limit, phase=phase,
             )
             break
 
+    if after_task:
+        return messages
     raise ContextLimitError(
         f"The estimated input ({tokens} tokens) exceeds the {INPUT_TOKEN_LIMIT}-token input budget. "
         f"Context compaction could not continue ({reason.replace('_', ' ')}). "
@@ -79,9 +101,9 @@ async def prepare_context(
 
 
 def _compression_boundary(
-    instructions: str, session: Session, policy: ContextPolicy, budget: PromptBudget,
+    instructions: str, session: Session, policy: ContextPolicy, budget: PromptBudget, task_start: int,
 ) -> int | None:
-    start = session.checkpoint.covered_messages if session.checkpoint else 1
+    start = session.checkpoint.covered_messages if session.checkpoint else 0
     turns = [
         index for index in range(start, len(session.messages))
         if session.messages[index].role == "assistant"
@@ -93,7 +115,9 @@ def _compression_boundary(
     end = len(session.messages)
     preferred = max(1, len(turns) - policy.keep_recent_turns)
     for boundary in turns[preferred:]:
-        candidate = build_context(instructions, session, checkpoint=Checkpoint(boundary, ""))
+        candidate = build_context(
+            instructions, session, policy=policy, checkpoint=Checkpoint(boundary, ""), task_start=task_start,
+        )
         if budget.estimate(candidate) + policy.max_checkpoint_tokens <= INPUT_TOKEN_LIMIT:
             return boundary
     return end
@@ -101,18 +125,23 @@ def _compression_boundary(
 
 async def _summarize(
     session: Session, end: int, policy: ContextPolicy, model: ModelClient, model_id: str,
-    *, workspace: dict[str, object], repair: bool,
+    *, workspace: dict[str, object], repair: bool, task_start: int, after_task: bool,
 ) -> Checkpoint:
     previous = session.checkpoint
-    start = previous.covered_messages if previous else 1
+    start = previous.covered_messages if previous else 0
+    separate = {task_start, len(session.messages) - 1} if after_task else {task_start}
+    history = [session.messages[index] for index in range(start, end) if index not in separate]
     for preview in ((4096, 1024, 256) if repair else (None, 4096, 1024, 256)):
         payload = {
-            "task": session.messages[0].content,
+            "task": _preview(session.messages[task_start].content, preview),
             "previous_checkpoint": previous.markdown if previous else None,
             "checkpoint_max_tokens": policy.max_checkpoint_tokens,
             "workspace_state": workspace,
-            "completed_history": _transcript(session.messages[start:end], session.failed_tool_calls, preview),
+            "completed_history": _transcript(history, session.failed_tool_calls, preview),
         }
+        if after_task:
+            payload["task_completed"] = True
+            payload["final_answer"] = _preview(session.messages[-1].content, preview)
         if repair:
             payload["format_repair"] = (
                 "The previous checkpoint was unusable. Use all six required headings verbatim in order. "

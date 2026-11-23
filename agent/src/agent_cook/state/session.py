@@ -4,6 +4,9 @@ from typing import Literal
 from agent_cook.tools.spec import ToolCall
 
 
+COMPLETION_CHECK_PREFIX = "Runtime completion check. "
+
+
 @dataclass(frozen=True, slots=True)
 class Message:
     role: Literal["system", "user", "assistant", "tool"]
