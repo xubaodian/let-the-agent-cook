@@ -24,6 +24,7 @@ async def run_loop(
     tools: ToolRegistry,
     tool_context: ToolContext,
     events: RunEvents,
+    task_start: int = 0,
 ) -> RunResult:
     definitions = tools.definitions(spec.tool_names)
     require_submission = spec.require_submission
@@ -47,6 +48,7 @@ async def run_loop(
             messages = await prepare_context(
                 instructions, session, policy=spec.context_policy, budget=budget,
                 model=model, model_id=spec.model, events=events, workspace_state=workspace_state,
+                task_start=task_start,
             )
         except ContextLimitError as error:
             raise AgentRunError(str(error)) from error
@@ -96,6 +98,16 @@ async def run_loop(
             final_artifacts = tuple(file.artifact for file in submitted.values())
             if not require_submission:
                 final_artifacts += tuple(artifact for key, artifact in artifacts.items() if key not in delivery_artifacts)
+            if spec.context_policy.post_turn_token_limit is not None:
+                try:
+                    await prepare_context(
+                        instructions, session, policy=spec.context_policy, budget=budget,
+                        model=model, model_id=spec.model, events=events, workspace_state=workspace_state,
+                        task_start=task_start, after_task=True,
+                    )
+                except asyncio.CancelledError:
+                    # The task and its artifacts have passed completion checks.
+                    events.emit("context.compaction_failed", phase="post_turn", reason="cancelled")
             return RunResult(tool_context.run_id, text, final_artifacts)
 
         if not definitions:

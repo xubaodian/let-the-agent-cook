@@ -14,6 +14,7 @@ from agent_cook.cli import main
 from agent_cook.sandbox.interface import SandboxError
 from agent_cook.state.local import LocalSessions
 from agent_cook.terminal import file_mentions
+from test_context_compaction import _CHECKPOINT
 from test_openrouter import response, sdk_client
 from test_workspace_tools import WorkerFixture
 
@@ -160,11 +161,14 @@ class CliEntryTest(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "posix", "Uses the POSIX workspace worker.")
     def test_resume_restores_the_previous_result_in_a_new_workspace(self):
+        raw_detail = "Detailed intermediate output.\n" * 4_000
         create = AsyncMock(side_effect=[
             tool(1, "read_file", path="sales data.csv"),
             tool(2, "write_file", path="out/note.txt", content="first revision"),
             tool(3, "submit_results", paths=["out/note.txt"]),
+            tool(7, "write_file", path="scratch/in-progress.txt", content=raw_detail),
             response("Delivered revision one."),
+            response(_CHECKPOINT),
             tool(4, "read_file", path="out/note.txt"),
             tool(5, "write_file", path="out/note.txt", content="second revision", overwrite=True),
             tool(6, "submit_results", paths=["out/note.txt"]),
@@ -206,10 +210,22 @@ class CliEntryTest(unittest.TestCase):
             self.assertEqual(state.revision, 2)
             self.assertEqual(state.inputs["sales data.csv"], b"value\n7\n")
             self.assertEqual(state.results["out/note.txt"], b"second revision")
+            self.assertEqual(state.history.checkpoint.markdown, _CHECKPOINT)
+            self.assertTrue(any(
+                json.loads(call.arguments).get("content") == raw_detail
+                for message in state.history.messages for call in message.tool_calls
+            ))
             self.assertEqual((first.closed, second.closed), (1, 1))
             self.assertIn("Delivered revision two.", output.getvalue())
 
-        follow_up = create.call_args_list[4].kwargs["messages"]
+        summary = json.loads(create.call_args_list[5].kwargs["messages"][-1]["content"])
+        self.assertEqual(summary["workspace_state"]["submitted_paths"], ["out/note.txt"])
+        self.assertTrue(summary["task_completed"])
+        self.assertEqual(summary["final_answer"], "Delivered revision one.")
+        follow_up = create.call_args_list[6].kwargs["messages"]
+        self.assertEqual(follow_up[-1]["content"], "Revise the previous note.")
+        self.assertTrue(any(_CHECKPOINT in message["content"] for message in follow_up))
         self.assertTrue(any(message["content"] == "Delivered revision one." for message in follow_up))
-        read_back = create.call_args_list[5].kwargs["messages"][-1]["content"]
+        self.assertFalse(any(message["role"] == "tool" or "tool_calls" in message for message in follow_up))
+        read_back = create.call_args_list[7].kwargs["messages"][-1]["content"]
         self.assertIn("first revision", read_back)

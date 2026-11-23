@@ -69,7 +69,8 @@ def show_progress(event: RunEvent) -> None:
     elif event.type == "tool.started":
         print(f"  {event.data['name']} …", file=sys.stderr)
     elif event.type == "context.compaction_started":
-        print(f"  Compacting context ({event.data['estimated_input_tokens']:,} estimated input tokens).", file=sys.stderr)
+        phase = "completed session history" if event.data.get("phase") == "post_turn" else "context"
+        print(f"  Compacting {phase} ({event.data['estimated_input_tokens']:,} estimated tokens).", file=sys.stderr)
     elif event.type == "context.compaction_retry":
         print("  Retrying the context checkpoint.", file=sys.stderr)
     elif event.type == "context.compaction_failed":
