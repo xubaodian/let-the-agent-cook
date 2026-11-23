@@ -70,9 +70,12 @@ sudo apparmor_parser -a /etc/apparmor.d/bwrap-userns-restrict
 | --- | --- |
 | `日期/会话 ID/<run_id>-results/` | 本次任务最终交付的文件。 |
 | `日期/会话 ID/<run_id>.jsonl` | 运行日志，可用于回放。 |
+| `日期/会话 ID/<run_id>.model.ndjson` | 模型请求和原始响应，以及工具实际收到的参数和返回结果。 |
 | `日期/会话 ID/<run_id>-artifacts/` | 各次提交的产物副本。 |
 
 日期取会话建立时的本地日期，续接时沿用同一个会话目录。一次 `exec` 单独归档。在同一个输入目录运行 `agent-cook resume --last` 会继续该目录的最近会话。旧版在输入目录保存过会话时，CLI 会把会话索引复制到公共工作区。已有的结果可从原路径打开。显式指定 `--trace` 时，该次运行的产物归档在日志旁边。
+
+CLI 默认记录模型诊断，终端通过 `Model trace` 显示文件路径。每次 HTTP 请求和响应可按 `request_id` 配对，工具输入和输出可按 `tool_call_id` 配对。使用 `agent-cook --no-model-trace`、`agent-cook exec --no-model-trace` 或 `agent-cook resume --last --no-model-trace` 可跳过诊断记录。记录保存在本地，包含任务正文及模型看到的内容。分享问题时可摘取相关记录。
 
 可用 `agent-cook.json` 的 `workspace_dir` 指定其他工作区，或用环境变量 `AGENT_COOK_WORKSPACE` 覆盖。相对工作区路径以配置文件所在目录为准。`/config` 显示当前工作区的绝对路径。
 

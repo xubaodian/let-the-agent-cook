@@ -5,8 +5,11 @@ from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
+from httpx import AsyncClient, Timeout
+
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentSpec, RunResult
+from agent_cook.events.diagnostics import model_http_hooks
 from agent_cook.events.journal import RunEvents
 from agent_cook.extensions.hooks import HookRunner
 from agent_cook.extensions.mcp import register_mcp_tools
@@ -71,16 +74,22 @@ async def run_task(
     if model_api is not None and model_api not in MODEL_APIS:
         raise ValueError("model_api must be chat_completions or responses.")
 
-    from httpx import Timeout
     from openai import AsyncOpenAI
 
     # Time out a stalled HTTP attempt before the model call's deadline.
     async with AsyncExitStack() as resources:
+        timeout = Timeout(180.0, connect=5.0)
+        client_options = {}
+        if events.diagnostics is not None:
+            client_options["http_client"] = await resources.enter_async_context(AsyncClient(
+                timeout=timeout, follow_redirects=True, event_hooks=model_http_hooks(events.diagnostics),
+            ))
         client = await resources.enter_async_context(AsyncOpenAI(
             api_key=api_key,
             base_url=OPENROUTER_BASE_URL,
             max_retries=len(RETRY_DELAYS),
-            timeout=Timeout(180.0, connect=5.0),
+            timeout=timeout,
+            **client_options,
         ))
         registry = ToolRegistry()
         tool_names: tuple[str, ...] = ()

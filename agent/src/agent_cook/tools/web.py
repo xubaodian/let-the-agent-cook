@@ -13,15 +13,20 @@ def register_exa_tools(registry: ToolRegistry, api_key: str) -> tuple[str, str]:
         "type": "streamable-http", "url": _EXA_MCP_URL, "headers": {"x-api-key": api_key},
     })
 
-    async def search(args: dict, _context: ToolContext) -> ToolResult:
+    async def call_exa(name: str, arguments: dict, context: ToolContext) -> ToolResult:
+        if context.events is not None and context.events.diagnostics is not None:
+            context.events.diagnostics.emit("exa.request", source_run_id=context.run_id, name=name, arguments=arguments)
+        return await call_mcp_tool(server, name, arguments)
+
+    async def search(args: dict, context: ToolContext) -> ToolResult:
         query = args["query"]
         if not query.strip():
             raise ToolError("Provide the complete search query with at least one non-whitespace character.")
-        return await call_mcp_tool(server, "web_search_exa", {
+        return await call_exa("web_search_exa", {
             "query": query, "numResults": args.get("limit", 5),
-        })
+        }, context)
 
-    async def fetch(args: dict, _context: ToolContext) -> ToolResult:
+    async def fetch(args: dict, context: ToolContext) -> ToolResult:
         url = args["url"]
         error_message = "Provide the full public HTTP or HTTPS URL, including its hostname."
         try:
@@ -35,9 +40,9 @@ def register_exa_tools(registry: ToolRegistry, api_key: str) -> tuple[str, str]:
             or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in url)
         ):
             raise ToolError(error_message)
-        return await call_mcp_tool(server, "web_fetch_exa", {
+        return await call_exa("web_fetch_exa", {
             "urls": [url], "maxCharacters": 4000,
-        })
+        }, context)
 
     # Some constrained tool decoders generate just the matching substring of a pattern.
     # Keep model-facing strings unconstrained by regex and validate their contents above.

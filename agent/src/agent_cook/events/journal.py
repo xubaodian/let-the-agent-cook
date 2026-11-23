@@ -15,15 +15,17 @@ class RunEvents:
         *,
         run_id: str | None = None,
         parent: "RunEvents | None" = None,
+        diagnostics: "RunEvents | None" = None,
     ) -> None:
         self.run_id = run_id or uuid4().hex
         self._sink = sink
         self._seq = 0
         self.parent_run_id = parent.run_id if parent is not None else None
         self._root = parent._root if parent is not None else self
+        self.diagnostics = diagnostics
 
     def child(self) -> "RunEvents":
-        return RunEvents(self._sink, parent=self)
+        return RunEvents(self._sink, parent=self, diagnostics=self.diagnostics)
 
     def emit(self, event_type: str, **data: object) -> None:
         if self._sink is None:

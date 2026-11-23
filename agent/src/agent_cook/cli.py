@@ -5,6 +5,7 @@ import os
 import sqlite3
 import sys
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import asdict, replace
 from datetime import date
 from functools import partial
@@ -17,6 +18,7 @@ from uuid import uuid4
 
 from agent_cook.core.types import DEFAULT_MAX_MODEL_TURNS, AgentRunError, AgentSpec, RunResult
 from agent_cook.delivery import publish_results, result_snapshots
+from agent_cook.events.diagnostics import local_model_trace
 from agent_cook.events.journal import RunEvents, write_jsonl
 from agent_cook.extensions.plugins import bundled_plugins, load_plugins, plugin_path
 from agent_cook.extensions.skills import SkillCatalog
@@ -76,10 +78,20 @@ async def _run(
     inputs: dict[str, bytes],
     *,
     observer: Callable[[RunEvent], None] | None = None,
+    model_trace: bool = True,
     **options,
 ) -> RunResult:
     trace_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with trace_path.open("x", encoding="utf-8") as trace:
+    with ExitStack() as resources:
+        trace = resources.enter_context(trace_path.open("x", encoding="utf-8"))
+        diagnostics = None
+        if model_trace:
+            name = trace_path.name.removesuffix(".jsonl") + ".model.ndjson"
+            exa_key = (options.get("exa_api_key") or os.environ.get("EXA_API_KEY", "")).strip()
+            diagnostics = resources.enter_context(local_model_trace(
+                trace_path.with_name(name), run_id, (api_key, exa_key),
+            ))
+
         def record(event: RunEvent) -> None:
             write_jsonl(trace, event)
             if observer is not None:
@@ -87,7 +99,7 @@ async def _run(
 
         return await run_task(
             spec, task, api_key, factory, inputs,
-            events=RunEvents(record, run_id=run_id),
+            events=RunEvents(record, run_id=run_id, diagnostics=diagnostics),
             artifact_dir=trace_path.parent / f"{run_id}-artifacts",
             **options,
         )
@@ -186,6 +198,13 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     parser.add_argument("--image-model", help="Image API model ID (or set OPENROUTER_IMAGE_MODEL)")
     if mode in ("local", "exec"):
         parser.add_argument("--json", action="store_true", help="Stream JSONL run events on stdout")
+    if mode in ("local", "exec", "resume"):
+        parser.add_argument(
+            "--no-model-trace", dest="model_trace", action="store_false",
+            help="Skip the local model request, response and tool diagnostic log",
+        )
+    else:
+        parser.set_defaults(model_trace=False)
     if mode == "doctor":
         parser.add_argument("--runtime", action="store_true", help="Test Python, Node.js, Chromium, and LibreOffice")
     if mode == "setup-runtime":
@@ -294,7 +313,7 @@ def _execute(args, prepared, task, api_key, inputs, *, local_session=None, obser
     trace = args.trace or args.workspace / session_date / session_id / f"{run_id}.jsonl"
     result = asyncio.run(_run(
         spec, task, api_key, trace, run_id, factory, inputs,
-        observer=observer, **options, **extra,
+        observer=observer, model_trace=args.model_trace, **options, **extra,
     ))
     delivered = publish_results(trace, result)
     if not getattr(args, "json", False):

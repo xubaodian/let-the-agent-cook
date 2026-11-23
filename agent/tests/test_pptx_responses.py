@@ -50,7 +50,6 @@ _BUILD = dedent("""
 class PowerPointResponsesTest(unittest.TestCase):
     def test_three_topics_use_the_sdk_docker_and_final_pptx_delivery(self):
         import httpx
-        from openai import AsyncOpenAI
         from PIL import Image
 
         buffer = io.BytesIO()
@@ -88,15 +87,11 @@ class PowerPointResponsesTest(unittest.TestCase):
                             item = text_item("Verified and delivered the editable deck.")
                         return httpx.Response(200, json=reply(item))
 
-                    def client(**kwargs):
-                        return AsyncOpenAI(
-                            **kwargs,
-                            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
-                        )
-
                     root = Path(directory) / case.slug
                     with (
-                        patch("openai.AsyncOpenAI", side_effect=client),
+                        patch("agent_cook.runner.AsyncClient", side_effect=lambda **kwargs: httpx.AsyncClient(
+                            transport=httpx.MockTransport(respond), **kwargs,
+                        )),
                         patch.dict(os.environ, {"OPENROUTER_API_KEY": "fixture-key"}),
                         patch("agent_cook.cli.NativeSandboxFactory", return_value=DockerSandboxFactory(IMAGE)),
                         redirect_stdout(io.StringIO()), redirect_stderr(diagnostics),
