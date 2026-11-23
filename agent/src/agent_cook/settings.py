@@ -171,7 +171,7 @@ def _catalog_data(catalog: ModelCatalog) -> dict:
     return data
 
 
-def _restrict_windows_file(path: Path) -> None:
+def restrict_windows_file(path: Path) -> None:
     system = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
     options = {"check": True, "capture_output": True, "text": True, "errors": "replace", "timeout": 10}
     try:
@@ -194,7 +194,7 @@ def write_private_file(path: Path, content: bytes, *, executable: bool = False) 
     os.close(descriptor)
     try:
         if sys.platform == "win32":
-            _restrict_windows_file(temporary)
+            restrict_windows_file(temporary)
         elif executable:
             temporary.chmod(0o700)
         temporary.write_bytes(content)

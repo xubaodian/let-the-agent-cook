@@ -110,6 +110,11 @@ async def run_loop(
         seen_calls.update(call_ids)
         for call in message.tool_calls:
             events.emit("tool.started", tool_call_id=call.id, name=call.name)
+            if events.diagnostics is not None:
+                events.diagnostics.emit(
+                    "tool.call", source_run_id=events.run_id, tool_call_id=call.id,
+                    name=call.name, arguments=call.arguments,
+                )
             result = await tools.invoke(call, tool_context)
             session.messages.append(
                 Message(role="tool", content=result.model_content, tool_call_id=call.id)
@@ -117,6 +122,11 @@ async def run_loop(
             if result.is_error:
                 session.failed_tool_calls.add(call.id)
             events.emit("tool.finished", tool_call_id=call.id, name=call.name, is_error=result.is_error)
+            if events.diagnostics is not None:
+                events.diagnostics.emit(
+                    "tool.result", source_run_id=events.run_id, tool_call_id=call.id,
+                    name=call.name, output=result.model_content, is_error=result.is_error,
+                )
             if call.name == SUBMIT_RESULTS and not result.is_error and result.submitted_files:
                 needs_submission = False
                 submitted.update((file.workspace_path, file) for file in result.submitted_files)

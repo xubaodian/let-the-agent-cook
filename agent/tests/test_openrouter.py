@@ -99,10 +99,11 @@ class CliTest(unittest.TestCase):
             ):
                 status = main([
                     "--sandbox", "none", "--config", str(config), "--context-window", "32768",
-                    "Say hello. " + "x" * 96_000, "--trace", str(trace),
+                    "Say hello. " + "x" * 96_000, "--trace", str(trace), "--no-model-trace",
                 ])
                 duplicate_status = main(["--sandbox", "none", "Try again", "--trace", str(trace)])
             raw_trace = trace.read_text(encoding="utf-8")
+            self.assertFalse(trace.with_suffix(".model.ndjson").exists())
             events = [json.loads(line) for line in raw_trace.splitlines()]
 
         self.assertEqual(status, 0)
