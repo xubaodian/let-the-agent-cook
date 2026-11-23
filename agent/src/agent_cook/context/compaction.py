@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable, Sequence
 
 from agent_cook.context.budget import PromptBudget, estimate_messages, estimate_text
 from agent_cook.context.builder import build_context
-from agent_cook.context.policy import INPUT_TOKEN_LIMIT, POST_TURN_RECENT_TOKENS, ContextPolicy
+from agent_cook.context.policy import INPUT_TOKEN_LIMIT, ContextPolicy
 from agent_cook.context.prompts import CHECKPOINT_HEADINGS, CHECKPOINT_PROMPT
 from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelCallTimeout, ModelClient, model_call_deadline
@@ -37,16 +37,16 @@ async def prepare_context(
     if after_task:
         instructions, budget = "", PromptBudget()
         if policy.post_turn_token_limit is None:
-            return build_context(instructions, session, task_start=active_task)
+            return build_context(instructions, session, policy=policy, task_start=active_task)
         limit = policy.post_turn_token_limit
 
-    messages = build_context(instructions, session, task_start=active_task)
+    messages = build_context(instructions, session, policy=policy, task_start=active_task)
     tokens = budget.estimate(messages)
     if tokens <= limit:
         return messages
 
     reason = "no_completed_turns"
-    boundary = _completed_boundary(session, task_start) if after_task else _compression_boundary(
+    boundary = len(session.messages) if after_task else _compression_boundary(
         instructions, session, policy, budget, task_start,
     )
     if boundary is not None:
@@ -64,7 +64,9 @@ async def prepare_context(
                     session, boundary, policy, model, model_id,
                     workspace=workspace, repair=repair, task_start=task_start, after_task=after_task,
                 )
-                candidate = build_context(instructions, session, checkpoint=checkpoint, task_start=active_task)
+                candidate = build_context(
+                    instructions, session, policy=policy, checkpoint=checkpoint, task_start=active_task,
+                )
                 reduced = budget.estimate(candidate)
                 if reduced > limit:
                     raise _CheckpointError("checkpoint_did_not_fit")
@@ -113,18 +115,12 @@ def _compression_boundary(
     end = len(session.messages)
     preferred = max(1, len(turns) - policy.keep_recent_turns)
     for boundary in turns[preferred:]:
-        candidate = build_context(instructions, session, checkpoint=Checkpoint(boundary, ""), task_start=task_start)
+        candidate = build_context(
+            instructions, session, policy=policy, checkpoint=Checkpoint(boundary, ""), task_start=task_start,
+        )
         if budget.estimate(candidate) + policy.max_checkpoint_tokens <= INPUT_TOKEN_LIMIT:
             return boundary
     return end
-
-
-def _completed_boundary(session: Session, task_start: int) -> int:
-    # Keep a short recent exchange verbatim. For a long task, retain just its answer when it fits.
-    if estimate_messages(session.messages[task_start:]) <= POST_TURN_RECENT_TOKENS:
-        return task_start
-    end = len(session.messages)
-    return end - 1 if estimate_messages(session.messages[-1:]) <= POST_TURN_RECENT_TOKENS else end
 
 
 async def _summarize(

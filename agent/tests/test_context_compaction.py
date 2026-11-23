@@ -4,13 +4,14 @@ import unittest
 from unittest.mock import AsyncMock
 
 from agent_cook.context.budget import PromptBudget, estimate_messages
-from agent_cook.context.policy import CLI_CONTEXT_POLICY, INPUT_TOKEN_LIMIT
+from agent_cook.context.builder import build_context
+from agent_cook.context.policy import CLI_CONTEXT_POLICY, INPUT_TOKEN_LIMIT, RETAINED_USER_TOKEN_LIMIT
 from agent_cook.context.prompts import CHECKPOINT_HEADINGS, EXECUTION_PROMPT
 from agent_cook.core.run import run_agent
 from agent_cook.core.types import AgentRunError, AgentSpec
 from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelTurn
-from agent_cook.state.session import Message, Session
+from agent_cook.state.session import COMPLETION_CHECK_PREFIX, Checkpoint, Message, Session
 from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.spec import ToolCall, ToolDefinition, ToolResult
 from test_runtime import ScriptedModel
@@ -190,6 +191,24 @@ class ContextCompactionTest(unittest.IsolatedAsyncioTestCase):
         model.next_turn.assert_awaited_once()
         self.assertEqual(model.next_turn.call_args.kwargs["messages"][1:3], tuple(session.messages[:2]))
         self.assertIsNone(session.checkpoint)
+
+    def test_checkpoint_retains_recent_user_requests_within_the_budget(self):
+        large_request = Message("user", "A" * RETAINED_USER_TOKEN_LIMIT * 3)
+        earlier = Message("user", "Write the report in English.")
+        latest = Message("user", "Make the totals easy to compare.")
+        new = Message("user", "Revise the charts.")
+        session = Session([
+            large_request, earlier, _call(1).message, Message("tool", "Detailed totals", tool_call_id="call-1"),
+            latest, Message("user", COMPLETION_CHECK_PREFIX + "Submit first."), Message("assistant", "Delivered."),
+            new,
+        ], checkpoint=Checkpoint(7, _CHECKPOINT))
+
+        messages = build_context("", session, policy=CLI_CONTEXT_POLICY, task_start=7)
+
+        self.assertEqual(messages[:2], (earlier, latest))
+        self.assertLessEqual(estimate_messages(messages[:2]), RETAINED_USER_TOKEN_LIMIT)
+        self.assertTrue(messages[2].content.endswith(_CHECKPOINT))
+        self.assertEqual(messages[3:], (new,))
 
     async def test_a_later_task_keeps_its_own_request_during_compaction(self):
         task = "Revise the current presentation."

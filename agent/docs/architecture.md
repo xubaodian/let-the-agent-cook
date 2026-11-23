@@ -26,7 +26,7 @@
 3. **调用模型生成 checkpoint。** 输入包含当前任务、上次 checkpoint、待替换历史和可用的工作区信息。已打开工作区且允许 `ls` 时，运行时读取最多 80 个相对文件路径，并附上本次已提交的路径。清单省略文件时标记截断。压缩请求同样受 360K 输入预算约束，必要时缩短历史中的长工具参数和结果。 [工作区清单](../src/agent_cook/core/loop.py) · [Checkpoint 提示词](../src/agent_cook/context/prompts.py)
 4. **校验后继续。** 校验成功后，后续请求用 checkpoint 和保留的近期消息重建历史。标题或长度不合格、压缩后仍超预算时，运行时用更短的压缩请求重试一次。仍无法缩小输入，或原始任务已超预算且没有可压缩历史时，任务给出错误。开始、重试、成功和失败记录在运行事件中。 [压缩实现](../src/agent_cook/context/compaction.py) · [事件日志](../src/agent_cook/events/journal.py)
 
-交互 CLI 在最终答复和交付检查完成后，按 32K 历史阈值尝试一次会话压缩。新版 checkpoint 记录已完成任务的成果、用户偏好和待办。最近任务在 4,096 tokens 内时保留原文，较长任务优先保留预算内的最终答复。下一条任务与 `resume --last` 使用保存的 checkpoint 和短尾部。压缩失败或取消时，CLI 照常交付，并继续使用原先的上下文。单次 `exec` 和 HTTP 服务沿用执行中的 360K 压缩。 [完成检查与压缩](../src/agent_cook/core/loop.py) · [CLI 会话](../src/agent_cook/cli.py)
+交互 CLI 在最终答复和交付检查完成后，按 32K 历史阈值判断是否生成会话 checkpoint。压缩成功后，下一条任务与 `resume --last` 使用 checkpoint、最近的完整用户请求（共约 4,096 tokens 以内）及其后的新消息。原先的助手答复、推理和工具调用与结果由摘要接替。Checkpoint 保留任务结论、用户偏好、交付路径、验证状态和待办。压缩失败或取消时，CLI 照常交付，并沿用之前的上下文。单次 `exec` 和 HTTP 服务沿用执行中的 360K 压缩。 [完成检查与压缩](../src/agent_cook/core/loop.py) · [CLI 会话](../src/agent_cook/cli.py)
 
 Checkpoint 使用固定的六个标题，供下一轮恢复任务状态。
 

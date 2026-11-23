@@ -211,6 +211,7 @@ class CliEntryTest(unittest.TestCase):
             self.assertEqual(state.inputs["sales data.csv"], b"value\n7\n")
             self.assertEqual(state.results["out/note.txt"], b"second revision")
             self.assertEqual(state.history.checkpoint.markdown, _CHECKPOINT)
+            previous_request = state.history.messages[0].content
             self.assertTrue(any(
                 json.loads(call.arguments).get("content") == raw_detail
                 for message in state.history.messages for call in message.tool_calls
@@ -224,8 +225,10 @@ class CliEntryTest(unittest.TestCase):
         self.assertEqual(summary["final_answer"], "Delivered revision one.")
         follow_up = create.call_args_list[6].kwargs["messages"]
         self.assertEqual(follow_up[-1]["content"], "Revise the previous note.")
+        self.assertEqual(follow_up[1]["content"], previous_request)
         self.assertTrue(any(_CHECKPOINT in message["content"] for message in follow_up))
-        self.assertTrue(any(message["content"] == "Delivered revision one." for message in follow_up))
-        self.assertFalse(any(message["role"] == "tool" or "tool_calls" in message for message in follow_up))
+        self.assertFalse(any(
+            message["role"] in ("assistant", "tool") or "tool_calls" in message for message in follow_up
+        ))
         read_back = create.call_args_list[7].kwargs["messages"][-1]["content"]
         self.assertIn("first revision", read_back)

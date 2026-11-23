@@ -10,7 +10,7 @@ from agent_cook.events.journal import RunEvents
 from agent_cook.model.client import ModelCallTimeout, ModelClient, model_call_deadline
 from agent_cook.protocol.artifacts import ArtifactRef
 from agent_cook.sandbox.interface import SandboxError
-from agent_cook.state.session import Message, Session
+from agent_cook.state.session import COMPLETION_CHECK_PREFIX, Message, Session
 from agent_cook.tools.artifacts import SUBMIT_RESULTS, stale_submissions
 from agent_cook.tools.registry import ToolRegistry
 from agent_cook.tools.spec import SubmittedFile, ToolContext
@@ -92,7 +92,7 @@ async def run_loop(
             if feedback:
                 if turn_number == spec.max_model_turns:
                     raise AgentRunError(feedback)
-                session.messages.append(Message("user", f"Runtime completion check. {feedback}"))
+                session.messages.append(Message("user", COMPLETION_CHECK_PREFIX + feedback))
                 events.emit("run.submission_required", turn=turn_number)
                 continue
             final_artifacts = tuple(file.artifact for file in submitted.values())

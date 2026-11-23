@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 INPUT_TOKEN_LIMIT = 360_000
 OUTPUT_TOKEN_LIMIT = 50_000
-POST_TURN_RECENT_TOKENS = 4_096
+RETAINED_USER_TOKEN_LIMIT = 4_096
 
 
 @dataclass(frozen=True, slots=True)
