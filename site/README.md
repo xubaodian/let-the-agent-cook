@@ -48,9 +48,43 @@ npm run new -- note tool-call-draft \
 | 回放步骤和产物清单 | src/data/replays/ |
 | 可公开的静态产物 | public/replays/ |
 
-每篇文章或案例用 Markdown frontmatter 填写标题、简介、时间和主题。案例可以用 **sourcePath** 指向同仓库的文件或目录。目录路径以斜杠结尾。**setupPath** 和 **command** 提供运行说明，**relatedNote** 用文章的文件名关联原理文章，**replay** 用回放的文件名关联步骤和产物。
+每篇文章或案例用 Markdown frontmatter 填写标题、简介、时间和主题。案例可以用 **sourcePath** 指向同仓库的文件或目录。目录路径以斜杠结尾。**setupPath** 和 **command** 提供运行说明，**relatedNotes** 用文章文件名列表关联一篇或多篇原理文章，**replay** 用回放的文件名关联步骤和产物。
 
 例如，开始做 vLLM 服务实验后，在仓库根目录添加 **vllm-serving/**，与 **agent/** 和 **site/** 同级。原理笔记放进文章目录，实验记录放进案例目录，案例的 **sourcePath** 指向该项目。
+
+## 从 Agent Cook 运行导入回放
+
+分享或本地复用一次任务时，保留 Agent Cook 的 JSONL 和同一次运行的 **<run_id>-results/**。以 **--trace /path/run.jsonl** 执行任务可指定记录位置。从 **site/** 检查轨迹中的可选事件。
+
+~~~bash
+npm run replay:import -- --trace /path/run.jsonl --inspect
+~~~
+
+选几个有解释价值的事件，按打印的 **seq** 填写下面的清单。标题和说明由作者编写。下载和预览文件路径均相对于最终结果目录，由作者按需选择。幻灯片图片可直接使用该次结果目录里的逐页导出图，**slides** 省略时仍可交付 PPTX 下载。
+
+~~~json
+{
+  "steps": [
+    { "seq": 2, "title": "载入任务", "detail": "确认输入范围和交付目标。" }
+  ],
+  "downloads": [
+    { "file": "out/talk.pptx", "label": "下载演讲 PPTX" }
+  ],
+  "slides": [
+    { "file": "out/preview/slide-1.png", "title": "演讲封面" }
+  ]
+}
+~~~
+
+将清单存为 **replay-spec.json**。把示例中的序号和路径替换成自己的值，再导入。
+
+~~~bash
+npm run replay:import -- --trace /path/run.jsonl --id xlsx-to-talk --spec /path/replay-spec.json
+~~~
+
+结果目录被移动或重命名时，用 **--results /path/to/results** 指定。工具按路径复制清单里点名的文件，并生成 **src/data/replays/xlsx-to-talk.json**。在案例 frontmatter 设置 **replay: xlsx-to-talk** 和 **relatedNotes**。两个栏目会自动建立链接。
+
+导入过程从事件中只取序号、类型和失败状态。提交前检查要公开的步骤说明和文件。原始 JSONL、输入附件、命令和模型输出留在私下，最终站点通过清单展示选中的步骤和产物。
 
 ## 刷新周报回放
 
