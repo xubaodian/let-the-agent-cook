@@ -98,7 +98,7 @@ async def run_loop(
             final_artifacts = tuple(file.artifact for file in submitted.values())
             if not require_submission:
                 final_artifacts += tuple(artifact for key, artifact in artifacts.items() if key not in delivery_artifacts)
-            if spec.context_policy.post_turn_token_limit is not None:
+            if events.parent_run_id is None and spec.context_policy.post_turn_token_limit is not None:
                 try:
                     await prepare_context(
                         instructions, session, policy=spec.context_policy, budget=budget,
