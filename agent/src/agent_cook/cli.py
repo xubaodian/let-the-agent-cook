@@ -187,7 +187,7 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     if mode in ("local", "exec"):
         parser.add_argument("--json", action="store_true", help="Stream JSONL run events on stdout")
     if mode == "doctor":
-        parser.add_argument("--runtime", action="store_true", help="Test Python, Node.js, Chromium, and PPTX rendering")
+        parser.add_argument("--runtime", action="store_true", help="Test Python, Node.js, Chromium, and LibreOffice")
     if mode == "setup-runtime":
         parser.add_argument("--with-office", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--trace", type=Path, help="Write the run to a new JSONL file at this path")
@@ -532,14 +532,13 @@ def _doctor(args: argparse.Namespace, catalog: ModelCatalog) -> int:
         "Chat model configured": bool(_chat_model(args, catalog)),
     }
     if args.sandbox == "native":
-        label = "Native workspace and PPTX rendering" if args.runtime else "Native process isolation"
         try:
             asyncio.run(NativeSandboxFactory().probe(runtime=args.runtime))
         except SandboxError as error:
-            checks[label] = False
+            checks["Native process isolation"] = False
             print(error, file=sys.stderr)
         else:
-            checks[label] = True
+            checks["Native process isolation"] = True
     for label, available in checks.items():
         print(f"{'OK' if available else 'Missing'}  {label}")
     return 0 if all(checks.values()) else 1

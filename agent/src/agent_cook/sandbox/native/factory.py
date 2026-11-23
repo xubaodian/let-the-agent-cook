@@ -17,7 +17,7 @@ from agent_cook.sandbox.dependencies import (
 from agent_cook.sandbox.interface import CommandResult, SandboxError
 from agent_cook.sandbox.limits import MAX_COMMAND_SECONDS, MAX_FILE_BYTES
 from agent_cook.sandbox.native.executor import environment, execute
-from agent_cook.sandbox.native.office import office_executable, probe_office
+from agent_cook.sandbox.native.office import office_executable
 from agent_cook.sandbox.native.runtime import (
     chromium_runtime, node_runtime, npm_cli, python_runtime, run_installer, uv_executable,
 )
@@ -235,6 +235,7 @@ class NativeSandbox:
                     "scipy, xlrd, xlsxwriter, yaml",
                 ),
                 ("node", str(npm_cli(node)), "--version"),
+                ("soffice", "--headless", "--version"),
             )
         else:
             commands = (("cmd", "/d", "/c", "exit", "0"),) if sys.platform == "win32" else (("true",),)
@@ -245,7 +246,6 @@ class NativeSandbox:
                     f"Native isolation probe failed for {argv[0]} (exit {result.exit_code}). {result.stderr.strip()[:400]}"
                 )
         if runtime:
-            await probe_office(self)
             await self.put_file("doctor.html", b"<title>Agent Cook</title><p>Workspace ready</p>")
             result = await self.request("playwright", {"path": "doctor.html"}, timeout_seconds=65)
             if result.get("title") != "Agent Cook":
