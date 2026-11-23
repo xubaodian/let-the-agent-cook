@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from agent_cook.cli import main
+from agent_cook.sandbox.interface import SandboxError
 from agent_cook.state.local import LocalSessions
 from agent_cook.terminal import file_mentions
 from test_openrouter import response, sdk_client
@@ -42,6 +43,21 @@ class CliEntryTest(unittest.TestCase):
     def setUp(self):
         self.workspace = Path(self.enterContext(TemporaryDirectory())).resolve()
         self.enterContext(patch.dict(os.environ, AGENT_COOK_WORKSPACE=str(self.workspace)))
+
+    def test_setup_requires_libreoffice_by_default(self):
+        with (
+            patch("agent_cook.sandbox.native.runtime.python_runtime", return_value=(Path(sys.executable), ())),
+            patch("agent_cook.sandbox.native.runtime.node_runtime"),
+            patch("agent_cook.sandbox.native.runtime.chromium_runtime"),
+            patch(
+                "agent_cook.sandbox.native.runtime.prepare_office",
+                side_effect=SandboxError("Could not prepare LibreOffice."),
+            ) as office,
+            redirect_stderr(io.StringIO()) as stderr,
+        ):
+            self.assertEqual(main(["setup-runtime"]), 1)
+        office.assert_called_once_with()
+        self.assertIn("Could not prepare LibreOffice.", stderr.getvalue())
 
     def test_exec_accepts_stdin_and_streams_only_events_on_stdout(self):
         create = AsyncMock(return_value=response("Done."))

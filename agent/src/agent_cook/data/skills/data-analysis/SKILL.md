@@ -5,6 +5,12 @@ description: Clean, reconcile, and analyze CSV, JSON, spreadsheets, or tool data
 
 # Data analysis
 
+## Language and storyline
+
+Use the requested language and locale in summaries, sheet names, tables, and charts. Keep the language of an existing deliverable by default, and match the user's language for new work. Explain necessary metric names in plain words. State the question and what the data shows, then give the evidence, why it matters, and any limitation or next step. Keep calculation details available in the workbook or notes for reviewers.
+
+## Analyze and verify
+
 1. Identify the grain, keys, date range, filters, and units of each source. Preserve the original inputs and follow pagination when a source supplies cursors.
 2. Use a repeatable script to normalize types and count invalid rows, duplicate keys, missing values, and unmatched joins. Use pandas for tabular data, xlrd for legacy .xls, PyArrow for Parquet, and NumPy or SciPy for numerical work. Resolve conflicting records against the source or record the uncertainty.
 3. Calculate each metric once. Save verified values, units, denominators, periods, and source references together. Use null for unavailable metrics and preserve zero as an observed value. Reuse the same data in workbooks, slides, briefs, and sites.

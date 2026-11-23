@@ -217,7 +217,9 @@ def linux(payload: Path, output: Path, work: Path) -> None:
     (base / "DEBIAN/control").write_text(
         f"Package: agent-cook\nVersion: {VERSION}\nArchitecture: amd64\n"
         "Maintainer: Let the Agent Cook <22562011+xubaodian@users.noreply.github.com>\n"
-        "Depends: libc6 (>= 2.39), bubblewrap, apparmor-profiles\nRecommends: gnome-keyring, xdg-utils\n"
+        "Depends: libc6 (>= 2.39), bubblewrap, apparmor-profiles, "
+        "libreoffice-impress | libreoffice-impress-nogui, fonts-noto-cjk\n"
+        "Recommends: gnome-keyring, xdg-utils\n"
         "Description: Agent Cook command line application\n", encoding="utf-8",
     )
     postinst = base / "DEBIAN/postinst"

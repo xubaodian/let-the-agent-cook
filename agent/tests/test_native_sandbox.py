@@ -13,6 +13,7 @@ from textwrap import dedent
 from unittest.mock import AsyncMock, patch
 
 from agent_cook.cli import main
+from agent_cook.sandbox.native.executor import environment, execute
 from agent_cook.sandbox.native.factory import NativeSandboxFactory
 from agent_cook.settings import DATA
 from test_cli_entry import ENV, sdk, tool
@@ -135,7 +136,44 @@ class NativeDeliveryTest(unittest.TestCase):
 
 @unittest.skipUnless(_RUN_NATIVE, "Set AGENT_COOK_TEST_NATIVE=1 on a host with native isolation.")
 class NativeBoundaryTest(unittest.IsolatedAsyncioTestCase):
-    @unittest.skipUnless(os.environ.get("AGENT_COOK_TEST_OFFICE") == "1", "Needs a native LibreOffice installation.")
+    @unittest.skipUnless(sys.platform == "darwin", "Seatbelt applies only on macOS.")
+    async def test_office_profile_limits_macos_ipc(self):
+        source = dedent("""
+            import ctypes
+            import os
+            import socket
+            import sys
+
+            check = ctypes.CDLL("/usr/lib/libsandbox.1.dylib").sandbox_check
+            check.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
+            for operation in (b"lsopen", b"job-creation", b"appleevent-send"):
+                assert check(os.getpid(), operation, 0) == 1, operation
+            with socket.socket(socket.AF_UNIX) as server, socket.socket(socket.AF_UNIX) as client:
+                address = os.path.join(os.environ["TMPDIR"], "test.sock")
+                server.bind(address)
+                server.listen()
+                client.connect(address)
+            with socket.socket(socket.AF_UNIX) as client:
+                try:
+                    client.connect(sys.argv[1])
+                except PermissionError:
+                    pass
+                else:
+                    raise AssertionError("Office profile can reach an unrelated host socket")
+        """)
+        with TemporaryDirectory(dir="/private/tmp") as outside, socket.socket(socket.AF_UNIX) as server:
+            unrelated = str(Path(outside) / "test.sock")
+            server.bind(unrelated)
+            server.listen()
+            async with NativeSandboxFactory().open("office-policy") as sandbox:
+                python, reads = await sandbox._runtime("python")
+                result = await execute(
+                    [str(python), "-I", "-c", source, unrelated],
+                    root=sandbox.root, cwd=sandbox.workspace.root, reads=reads,
+                    env=environment(sandbox.scratch, (python.parent,)), timeout=10, office_scratch=sandbox.scratch,
+                )
+                self.assertEqual(result.exit_code, 0, result.stderr)
+
     async def test_renders_pptx_in_the_workspace(self):
         from pptx import Presentation
 
@@ -151,14 +189,25 @@ class NativeBoundaryTest(unittest.IsolatedAsyncioTestCase):
                 "soffice", "--headless", "--convert-to", "pdf:impress_pdf_Export",
                 "--outdir", ".", "汇报 样例.pptx",
             ], cwd=".", timeout_seconds=60)
-            self.assertEqual(result.exit_code, 0, result.stderr)
-            self.assertTrue((await sandbox.get_file("汇报 样例.pdf")).startswith(b"%PDF"))
+            diagnostics = f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            self.assertEqual(result.exit_code, 0, diagnostics)
+            self.assertTrue((await sandbox.get_file("汇报 样例.pdf")).startswith(b"%PDF"), diagnostics)
             verify = await sandbox.exec([
                 "python", "-c",
-                "from pypdf import PdfReader; import sys; assert len(PdfReader(sys.argv[1]).pages) == 2",
+                dedent("""
+                    import sys
+                    import pypdfium2
+
+                    with pypdfium2.PdfDocument(sys.argv[1]) as document:
+                        assert len(document) == 2
+                        for index, page in enumerate(document, 1):
+                            page.render().to_pil().save(f"slide-{index}.png")
+                """),
                 "汇报 样例.pdf",
             ], cwd=".", timeout_seconds=20)
             self.assertEqual(verify.exit_code, 0, verify.stderr)
+            for index in (1, 2):
+                self.assertTrue((await sandbox.get_file(f"slide-{index}.png")).startswith(b"\x89PNG\r\n\x1a\n"))
 
     async def test_os_blocks_host_files_credentials_and_loopback(self):
         probe = dedent("""

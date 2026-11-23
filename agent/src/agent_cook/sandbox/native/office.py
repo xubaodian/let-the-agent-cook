@@ -23,13 +23,24 @@ def office_executable() -> Path | None:
         )
     else:
         candidates = (Path("/usr/bin/soffice"), Path("/usr/local/bin/soffice"))
-    return next((path.resolve() for path in candidates if path.is_file()), None)
+    return next((path.resolve() for path in candidates if path.is_file() and os.access(path, os.X_OK)), None)
+
+
+def _homebrew() -> str | None:
+    brew = shutil.which("brew")
+    if brew is not None:
+        return brew
+    return next(
+        (str(path) for path in (Path("/opt/homebrew/bin/brew"), Path("/usr/local/bin/brew"))
+         if os.access(path, os.X_OK) and path.is_file()),
+        None,
+    )
 
 
 def prepare_office() -> None:
     if office_executable() is not None:
         return
-    if sys.platform == "darwin" and (brew := shutil.which("brew")):
+    if sys.platform == "darwin" and (brew := _homebrew()):
         commands = [(brew, "install", "--cask", "libreoffice")]
     elif sys.platform == "win32" and (winget := shutil.which("winget.exe")):
         commands = [(winget, "install", "--id", "TheDocumentFoundation.LibreOffice", "--exact", "--source", "winget")]
@@ -41,6 +52,7 @@ def prepare_office() -> None:
         ]
     else:
         raise SandboxError(f"Install LibreOffice for this platform from {_DOWNLOAD}, then retry.")
+    print("Preparing LibreOffice for PowerPoint rendering …", file=sys.stderr, flush=True)
     try:
         for argv in commands:
             subprocess.run(argv, check=True)

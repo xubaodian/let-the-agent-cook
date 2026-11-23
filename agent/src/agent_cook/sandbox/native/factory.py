@@ -29,6 +29,7 @@ _FILES = {
     "list_files": list_files, "search_files": search_files, "read_file": read_file,
     "write_file": write_file, "copy_file": copy_file,
 }
+_OFFICE_COMMANDS = ("soffice", "libreoffice", "soffice.com", "soffice.exe")
 
 
 class NativeSandbox:
@@ -70,10 +71,13 @@ class NativeSandbox:
                 self._node = await asyncio.to_thread(node_runtime)
             prefix = self._node.parent if sys.platform == "win32" else self._node.parent.parent
             return self._node, (prefix,)
-        if binary in ("soffice", "libreoffice", "soffice.com", "soffice.exe"):
+        if binary in _OFFICE_COMMANDS:
             office = office_executable()
             if office is None:
-                raise SandboxError("LibreOffice is unavailable. Run agent-cook setup-runtime --with-office to prepare it.")
+                raise SandboxError("LibreOffice is unavailable. Run agent-cook setup-runtime to prepare it.")
+            if sys.platform == "darwin":
+                # NSBundle resolves the .app directory when soffice starts.
+                return office, (office.parents[2],)
             if sys.platform == "win32":
                 program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files")).resolve()
                 if office.is_relative_to(program_files):
@@ -116,13 +120,18 @@ class NativeSandbox:
         if sys.platform == "win32" and executable == self._node:
             # Node's realpath traversal starts at the drive root, outside the AppContainer's access.
             env["NODE_OPTIONS"] = "--preserve-symlinks --preserve-symlinks-main"
-        if executable.name.lower() in ("soffice", "soffice.com", "soffice.exe"):
+        program = argv[0].lower() if sys.platform == "win32" else argv[0]
+        office_scratch = None
+        if program in _OFFICE_COMMANDS:
             # Give the renderer a workspace profile distinct from the user's desktop session.
             prefix.append(f"-env:UserInstallation={(self.scratch / 'libreoffice').as_uri()}")
             env["SAL_USE_VCLPLUGIN"] = "svp"
+            if sys.platform == "darwin":
+                office_scratch = self.scratch
+                env["OSL_SOCKET_PATH"] = str(office_scratch)
         return await execute(
             [*prefix, *argv[1:]], root=self.root, cwd=directory, reads=reads,
-            env=env, timeout=timeout, payload=payload,
+            env=env, timeout=timeout, payload=payload, office_scratch=office_scratch,
         )
 
     async def exec(
@@ -226,6 +235,7 @@ class NativeSandbox:
                     "scipy, xlrd, xlsxwriter, yaml",
                 ),
                 ("node", str(npm_cli(node)), "--version"),
+                ("soffice", "--headless", "--version"),
             )
         else:
             commands = (("cmd", "/d", "/c", "exit", "0"),) if sys.platform == "win32" else (("true",),)
@@ -247,7 +257,9 @@ class NativeSandboxFactory:
 
     @asynccontextmanager
     async def open(self, run_id: str):
-        with TemporaryDirectory(prefix="agent-cook-") as path:
+        # LibreOffice's local socket name must fit within the macOS sockaddr_un limit.
+        temporary_base = "/private/tmp" if sys.platform == "darwin" else None
+        with TemporaryDirectory(prefix="agent-cook-", dir=temporary_base) as path:
             yield NativeSandbox(Path(path))
 
     async def probe(self, *, runtime: bool = False) -> None:

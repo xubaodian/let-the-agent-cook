@@ -93,14 +93,12 @@ case "${1:-}" in
             fi
             if [[ "${1:-}" == --with-office ]]; then
                 shift
-                "$python" -I -m agent_cook setup-runtime --with-office
-            else
-                "$python" -I -m agent_cook setup-runtime
             fi
+            "$python" -I -m agent_cook setup-runtime
             launch -m agent_cook "$@"
         fi
         if [[ $# -gt 1 || ($# -eq 1 && "$1" != --docker && "$1" != --with-office) ]]; then
-            echo "Usage: ./cook setup [--docker|--with-office]" >&2
+            echo "Usage: ./cook setup [--docker]" >&2
             exit 2
         fi
         install_environment

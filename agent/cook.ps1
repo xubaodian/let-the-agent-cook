@@ -62,16 +62,14 @@ try {
                 & $python -I -m agent_cook install-global @words
                 exit $LASTEXITCODE
             }
-            $runtimeArgs = @()
             if ($words.Count -and $words[0] -eq "--with-office") {
-                $runtimeArgs = @($words[0])
                 $words.RemoveAt(0)
             }
-            & $python -I -m agent_cook setup-runtime @runtimeArgs
+            & $python -I -m agent_cook setup-runtime
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         } else {
             if ($words.Count -gt 1 -or ($words.Count -eq 1 -and $words[0] -notin @("--docker", "--with-office"))) {
-                throw "Usage: cook.cmd setup [--docker|--with-office]"
+                throw "Usage: cook.cmd setup [--docker]"
             }
             Install-Environment
             if ($words.Count -and $words[0] -eq "--docker") {

@@ -32,7 +32,6 @@ from agent_cook.sandbox.e2b import E2BSandboxFactory
 from agent_cook.sandbox.interface import SandboxError, SandboxFactory
 from agent_cook.sandbox.limits import MAX_TRANSFER_BYTES
 from agent_cook.sandbox.native.factory import NativeSandboxFactory
-from agent_cook.sandbox.native.office import prepare_office
 from agent_cook.sandbox.native.runtime import prepare_runtime
 from agent_cook.settings import DATA, AgentConfig, model_catalog, release_image, saved_model
 from agent_cook.state.local import LocalSession, LocalSessions
@@ -188,9 +187,9 @@ def _parser(mode: str) -> argparse.ArgumentParser:
     if mode in ("local", "exec"):
         parser.add_argument("--json", action="store_true", help="Stream JSONL run events on stdout")
     if mode == "doctor":
-        parser.add_argument("--runtime", action="store_true", help="Prepare and test Python, Node.js, and Chromium")
+        parser.add_argument("--runtime", action="store_true", help="Test Python, Node.js, Chromium, and LibreOffice")
     if mode == "setup-runtime":
-        parser.add_argument("--with-office", action="store_true", help="Install LibreOffice for PowerPoint rendering")
+        parser.add_argument("--with-office", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--trace", type=Path, help="Write the run to a new JSONL file at this path")
     service = mode in ("serve", "docker")
     parser.add_argument(
@@ -592,13 +591,19 @@ def main(argv: list[str] | None = None) -> int:
     mode = words.pop(0) if words and words[0] in modes else "local"
     parser = _parser(mode)
     args = parser.parse_args(words)
-    try:
-        if mode == "setup-runtime":
+    if mode == "setup-runtime" or (args.app and not args.list_models and not args.list_plugins):
+        try:
             asyncio.run(prepare_runtime())
-            if args.with_office:
-                prepare_office()
+        except (OSError, SandboxError) as error:
+            _failure(error)
+            return 1
+        except KeyboardInterrupt:
+            print("Setup cancelled.", file=sys.stderr)
+            return 130
+        if mode == "setup-runtime":
             print("The native workspace runtime is ready.", file=sys.stderr)
             return 0
+    try:
         if args.list_plugins:
             print(json.dumps([{
                 "name": plugin.name, "description": plugin.description, "skills": plugin.skill_refs,

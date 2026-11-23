@@ -58,7 +58,7 @@ class ManagedUpdateTest(unittest.TestCase):
         prefix = f"let-the-agent-cook-{self.latest}/agent/"
         shell = f"""#!/bin/sh
 case "$1" in
-    setup) exit 0 ;;
+    setup|setup-runtime) exit 0 ;;
     --list-models)
         test "$2" = '--config' && test -f "$3" || exit 3
         echo 'Invalid configuration at $.workspace_dir.' >&2
@@ -69,7 +69,7 @@ test -f 'selected file.txt' || exit 2
 printf '%s\n' {shlex.quote(self.latest)}
 """
         powershell = f"""
-if ($args[0] -eq "setup") {{ exit 0 }}
+if ($args[0] -in @("setup", "setup-runtime")) {{ exit 0 }}
 if ($args[0] -eq "--list-models") {{
     if ($args[1] -ne "--config" -or !(Test-Path -LiteralPath $args[2])) {{ exit 3 }}
     [Console]::Error.WriteLine("Invalid configuration at workspace_dir.")
@@ -113,6 +113,7 @@ exit 0
         first, second, third, fourth = (letter * 40 for letter in "abcd")
         manage_source_install(install=True, config=self.config)
         self.assertEqual(self._launch(), first)
+        manage_source_install(install=True, config=self.config)
         manage_source_install(check=True)
         self.assertEqual(self.downloads, [first])
         self.assertFalse((self.install / "versions" / first / "site").exists())

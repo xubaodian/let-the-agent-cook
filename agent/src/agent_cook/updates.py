@@ -190,7 +190,7 @@ def _register_path(root: Path, revision: str) -> None:
 
 
 def manage_source_install(
-    *, install: bool = False, check: bool = False, rollback: bool = False, with_office: bool = False,
+    *, install: bool = False, check: bool = False, rollback: bool = False,
     config: Path | None = None, models: Path | None = None,
 ) -> None:
     if getattr(sys, "frozen", False):
@@ -230,12 +230,12 @@ def manage_source_install(
                 if latest != current or not (versions / latest / ".ready").is_file():
                     project = _prepare(client, root, latest)
                     _validate(project, config, models)
+                elif install:
+                    run(
+                        source_command(versions / latest, "setup-runtime"),
+                        env=_install_env(), check=True, timeout=900,
+                    )
                 if install:
-                    if with_office:
-                        run(
-                            source_command(versions / latest, "setup-runtime", "--with-office"),
-                            env=_install_env(), check=True, timeout=900,
-                        )
                     _install_launcher(root)
                 if latest != current:
                     _activate(root, latest, current)
@@ -264,7 +264,7 @@ def update_command(command: str, words: list[str]) -> int:
     parser.add_argument("--config", type=Path, help="Validate this configuration with the target version")
     parser.add_argument("--models-config", type=Path, help="Validate this model catalog with the target version")
     if installing:
-        parser.add_argument("--with-office", action="store_true", help="Install LibreOffice for PowerPoint rendering")
+        parser.add_argument("--with-office", action="store_true", help=argparse.SUPPRESS)
     else:
         modes = parser.add_mutually_exclusive_group()
         modes.add_argument("--check", action="store_true", help="Check GitHub main without changing the installation")
@@ -273,7 +273,7 @@ def update_command(command: str, words: list[str]) -> int:
     try:
         manage_source_install(
             install=installing, check=getattr(args, "check", False), rollback=getattr(args, "rollback", False),
-            with_office=getattr(args, "with_office", False), config=args.config, models=args.models_config,
+            config=args.config, models=args.models_config,
         )
     except KeyboardInterrupt:
         print("Update cancelled.", file=sys.stderr)
