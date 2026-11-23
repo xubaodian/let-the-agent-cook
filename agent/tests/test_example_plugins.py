@@ -266,7 +266,10 @@ class ExamplePluginsTest(unittest.TestCase):
             resources.enter_context(redirect_stdout(io.StringIO()))
             stderr = resources.enter_context(stderr_path.open("w", encoding="utf-8"))
             resources.enter_context(redirect_stderr(stderr))
-            status = main(["--sandbox", "native", "--trace", str(trace), "--request", str(source), "--max-turns", "24"])
+            status = main([
+                "--sandbox", "native", "--trace", str(trace), "--no-model-trace",
+                "--request", str(source), "--max-turns", "24",
+            ])
         if errors:
             raise errors[0]
         self.assertEqual(status, 0, stderr_path.read_text(encoding="utf-8"))
